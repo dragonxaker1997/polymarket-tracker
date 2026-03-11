@@ -223,6 +223,12 @@ export function TradeHistory({ trades, onDelete, onUpdateNote }) {
                         </Button>
                       </div>
 
+                      {trade.note && expandedTradeId !== trade.id ? (
+                        <div className="mt-2 rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-300">
+                          {trade.note}
+                        </div>
+                      ) : null}
+
                       {expandedTradeId === trade.id ? (
                         <div className="mt-3 rounded-xl border border-slate-800 bg-slate-950 p-3">
                           <textarea

@@ -104,12 +104,28 @@ export function AdminPage() {
           <Card className="border-slate-800 bg-[#0f172a] py-0 text-white ring-0 lg:col-span-2">
             <CardContent className="px-5 pt-5 pb-5">
               <div className="mb-2 text-sm text-slate-400">Calendar month</div>
-              <input
-                type="month"
-                value={month}
-                onChange={(event) => setMonth(event.target.value)}
-                className="w-full rounded-xl border border-slate-800 bg-[#020617] px-3 py-2.5 outline-none focus:border-slate-600"
-              />
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <Button
+                  variant="outline"
+                  onClick={() => setMonth((current) => shiftMonth(current, -1))}
+                  className="rounded-xl border-slate-700 bg-slate-900 text-white hover:bg-slate-800"
+                >
+                  Prev month
+                </Button>
+                <input
+                  type="month"
+                  value={month}
+                  onChange={(event) => setMonth(event.target.value)}
+                  className="w-full rounded-xl border border-slate-800 bg-[#020617] px-3 py-2.5 outline-none focus:border-slate-600"
+                />
+                <Button
+                  variant="outline"
+                  onClick={() => setMonth((current) => shiftMonth(current, 1))}
+                  className="rounded-xl border-slate-700 bg-slate-900 text-white hover:bg-slate-800"
+                >
+                  Next month
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -241,4 +257,11 @@ function formatDate(date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(
     date.getDate()
   ).padStart(2, "0")}`
+}
+
+function shiftMonth(monthValue, offset) {
+  const [year, month] = monthValue.split("-").map(Number)
+  const date = new Date(year, month - 1 + offset, 1)
+
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`
 }
