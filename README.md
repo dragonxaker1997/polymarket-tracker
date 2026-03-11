@@ -75,9 +75,13 @@ create table if not exists public.trades (
   rsi text,
   macd text,
   vwap text,
+  note text,
   result text not null,
   created_at timestamptz not null default now()
 );
+
+alter table public.trades
+add column if not exists note text;
 
 alter table public.profiles enable row level security;
 alter table public.trades enable row level security;
@@ -213,6 +217,44 @@ $$;
 
 revoke all on function public.get_worker_summaries() from public;
 grant execute on function public.get_worker_summaries() to authenticated;
+
+drop function if exists public.get_team_daily_pnl(date, date);
+
+create or replace function public.get_team_daily_pnl(date_from date, date_to date)
+returns table (
+  trade_date date,
+  user_id uuid,
+  display_name text,
+  email text,
+  daily_pnl numeric
+)
+language sql
+security definer
+set search_path = public, auth
+as $$
+  with admin_check as (
+    select 1
+    from auth.users
+    where id = auth.uid()
+      and lower(email) = lower('YOUR_ADMIN_EMAIL')
+  )
+  select
+    (t.created_at at time zone 'UTC')::date as trade_date,
+    t.user_id,
+    coalesce(nullif(trim(p.display_name), ''), null) as display_name,
+    u.email::text as email,
+    sum(t.pnl) as daily_pnl
+  from public.trades t
+  join auth.users u on u.id = t.user_id
+  left join public.profiles p on p.user_id = t.user_id
+  where exists (select 1 from admin_check)
+    and (t.created_at at time zone 'UTC')::date between date_from and date_to
+  group by (t.created_at at time zone 'UTC')::date, t.user_id, p.display_name, u.email
+  order by trade_date, email;
+$$;
+
+revoke all on function public.get_team_daily_pnl(date, date) from public;
+grant execute on function public.get_team_daily_pnl(date, date) to authenticated;
 ```
 
 5. Для админ-страницы:

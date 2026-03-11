@@ -3,7 +3,7 @@ import { useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { getTradePreview } from "@/lib/trade-utils"
+import { getTradePreview, getTradeRiskState } from "@/lib/trade-utils"
 
 const EMPTY_FORM = {
   size: "",
@@ -35,12 +35,16 @@ const CHECKLIST_ROWS = [
   ["HL10", "Break HL10 High", "Break HL10 Low"],
 ]
 
-export function TradeForm({ onSubmit }) {
+export function TradeForm({ onSubmit, currentBalance, requireDangerConfirm }) {
   const [form, setForm] = useState(EMPTY_FORM)
 
   const preview = useMemo(
     () => getTradePreview(form.size, form.entry, form.exit),
     [form.entry, form.exit, form.size]
+  )
+  const riskState = useMemo(
+    () => getTradeRiskState(form, currentBalance),
+    [currentBalance, form]
   )
 
   function updateField(name, value) {
@@ -50,10 +54,18 @@ export function TradeForm({ onSubmit }) {
     }))
   }
 
-  function handleSubmit() {
+  async function handleSubmit() {
+    if (requireDangerConfirm) {
+      const confirmed = window.confirm(
+        "Loss streak is already 5 or more. Confirm this risky trade before continuing."
+      )
+
+      if (!confirmed) return
+    }
+
     const created = onSubmit(form)
 
-    if (created) {
+    if (await created) {
       setForm(EMPTY_FORM)
     }
   }
@@ -89,6 +101,18 @@ export function TradeForm({ onSubmit }) {
             Preview PnL: {preview.previewPnl >= 0 ? "+" : ""}${preview.previewPnl.toFixed(2)}
           </div>
         </div>
+
+        {riskState.showSizeWarning ? (
+          <div className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200">
+            Recommended trade size exceeded. Use one of the standard sizes: 12%, 15%, or 20% of current balance.
+          </div>
+        ) : null}
+
+        {riskState.showRektRisk ? (
+          <div className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm font-medium text-red-200">
+            REKT RISK: two or more key signals are red.
+          </div>
+        ) : null}
 
         <Button onClick={handleSubmit} className="mt-4 h-11 w-full rounded-xl bg-green-600 text-white hover:bg-green-500">
           Add trade

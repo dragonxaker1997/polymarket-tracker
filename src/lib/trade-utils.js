@@ -40,6 +40,7 @@ export function createTrade(form) {
     rsi: form.rsi,
     macd: form.macd,
     vwap: form.vwap,
+    note: form.note ?? "",
     result: pnl >= 0 ? "win" : "loss",
   }
 }
@@ -97,6 +98,69 @@ export function getTradeStats(trades, startBalance) {
   }
 }
 
+export function getQuickSizes(balance) {
+  return [0.12, 0.15, 0.2].map((ratio) => balance * ratio)
+}
+
+export function getAtrTone(value) {
+  const numericValue = Number(value)
+
+  if (!Number.isFinite(numericValue)) return "red"
+
+  return numericValue >= 40 ? "green" : "red"
+}
+
+export function getTimeTone(value) {
+  const numericValue = Number(value)
+
+  if (!Number.isFinite(numericValue)) return "red"
+  if (numericValue >= 5 && numericValue <= 10) return "green"
+  if (numericValue >= 11 && numericValue <= 15) return "yellow"
+  if (numericValue >= 1 && numericValue < 5) return "red"
+
+  return "red"
+}
+
+export function getEntryTone(value) {
+  const cents = Number(value) * 100
+
+  if (!Number.isFinite(cents)) return "red"
+
+  return cents >= 60 && cents <= 72 ? "green" : "red"
+}
+
+export function getRsiTone(value) {
+  const numericValue = Number(value)
+
+  if (!Number.isFinite(numericValue)) return "red"
+
+  return numericValue >= 40 && numericValue <= 60 ? "green" : "red"
+}
+
+export function getTradeRiskState(form, balance) {
+  const numericSize = Number(form.size)
+  const quickSizes = getQuickSizes(balance)
+  const sizeMatchesRecommendation =
+    Number.isFinite(numericSize) &&
+    quickSizes.some((recommended) => Math.abs(recommended - numericSize) < 0.01)
+
+  const signals = [
+    { key: "time", tone: form.time ? getTimeTone(form.time) : null },
+    { key: "entry", tone: form.entry ? getEntryTone(normalizePrice(form.entry) ?? form.entry) : null },
+    { key: "atr", tone: form.atr ? getAtrTone(form.atr) : null },
+    { key: "rsi", tone: form.rsi ? getRsiTone(form.rsi) : null },
+  ]
+
+  const redSignals = signals.filter((signal) => signal.tone === "red")
+
+  return {
+    quickSizes,
+    showSizeWarning: Number.isFinite(numericSize) && numericSize > 0 && !sizeMatchesRecommendation,
+    showRektRisk: redSignals.length >= 2,
+    redSignals,
+  }
+}
+
 export function buildEquityData(trades, startBalance) {
   const chronologicalTrades = [...trades].reverse()
 
@@ -117,28 +181,52 @@ export function buildEquityData(trades, startBalance) {
 }
 
 export function isTimeValueOk(value) {
-  const numericValue = Number(value)
-
-  return Number.isFinite(numericValue) && numericValue >= 5 && numericValue <= 10
+  return getTimeTone(value) === "green"
 }
 
 export function isEntryOk(value) {
-  const cents = Number(value) * 100
+  return getEntryTone(value) === "green"
+}
 
-  return Number.isFinite(cents) && cents >= 50 && cents <= 72
+export function isSameDay(createdAt, dateValue) {
+  if (!createdAt || !dateValue) return false
+
+  const tradeDate = new Date(createdAt)
+
+  if (Number.isNaN(tradeDate.getTime())) return false
+
+  return formatDateKey(tradeDate) === dateValue
+}
+
+export function isWithinDateRange(createdAt, dateFrom, dateTo) {
+  if (!createdAt) return false
+
+  const tradeDate = new Date(createdAt)
+
+  if (Number.isNaN(tradeDate.getTime())) return false
+
+  const tradeKey = formatDateKey(tradeDate)
+
+  if (dateFrom && tradeKey < dateFrom) return false
+  if (dateTo && tradeKey > dateTo) return false
+
+  return true
+}
+
+export function formatDateKey(date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, "0")
+  const day = String(date.getDate()).padStart(2, "0")
+
+  return `${year}-${month}-${day}`
 }
 
 function isTradeFromToday(createdAt) {
   if (!createdAt) return false
 
   const tradeDate = new Date(createdAt)
-  const now = new Date()
 
   if (Number.isNaN(tradeDate.getTime())) return false
 
-  return (
-    tradeDate.getFullYear() === now.getFullYear() &&
-    tradeDate.getMonth() === now.getMonth() &&
-    tradeDate.getDate() === now.getDate()
-  )
+  return formatDateKey(tradeDate) === formatDateKey(new Date())
 }

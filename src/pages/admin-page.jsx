@@ -1,14 +1,16 @@
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Link } from "react-router-dom"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { loadWorkerSummaries } from "@/lib/trade-service"
+import { loadTeamDailyPnl, loadWorkerSummaries } from "@/lib/trade-service"
 import { useAuth } from "@/providers/use-auth"
 
 export function AdminPage() {
   const { user, signOut } = useAuth()
   const [workers, setWorkers] = useState([])
+  const [calendarItems, setCalendarItems] = useState([])
+  const [month, setMonth] = useState(getCurrentMonthValue())
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState("")
 
@@ -19,11 +21,17 @@ export function AdminPage() {
       setIsLoading(true)
       setError("")
 
+      const { dateFrom, dateTo } = getMonthRange(month)
+
       try {
-        const summaries = await loadWorkerSummaries()
+        const [summaries, dailyItems] = await Promise.all([
+          loadWorkerSummaries(),
+          loadTeamDailyPnl(dateFrom, dateTo),
+        ])
 
         if (!active) return
         setWorkers(summaries)
+        setCalendarItems(dailyItems)
       } catch (nextError) {
         if (!active) return
         setError(nextError.message ?? "Failed to load worker results.")
@@ -39,7 +47,13 @@ export function AdminPage() {
     return () => {
       active = false
     }
-  }, [])
+  }, [month])
+
+  const teamTotalPnl = useMemo(
+    () => workers.reduce((sum, worker) => sum + worker.total_pnl, 0),
+    [workers]
+  )
+  const calendarDays = useMemo(() => buildCalendarDays(month, calendarItems), [calendarItems, month])
 
   return (
     <div className="min-h-screen bg-[#020617] p-6 text-white md:p-10">
@@ -75,7 +89,32 @@ export function AdminPage() {
           </div>
         ) : null}
 
-        <Card className="border-slate-800 bg-[#0f172a] py-0 text-white ring-0">
+        <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
+          <Card className="border-slate-800 bg-[#0f172a] py-0 text-white ring-0">
+            <CardHeader className="px-5 pt-5 pb-0">
+              <CardTitle className="text-sm font-normal text-slate-400">Team Total PnL</CardTitle>
+            </CardHeader>
+            <CardContent className="px-5 pt-2 pb-5">
+              <div className={`text-3xl font-bold ${teamTotalPnl >= 0 ? "text-green-400" : "text-red-400"}`}>
+                {teamTotalPnl >= 0 ? "+" : ""}${teamTotalPnl.toFixed(2)}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-slate-800 bg-[#0f172a] py-0 text-white ring-0 lg:col-span-2">
+            <CardContent className="px-5 pt-5 pb-5">
+              <div className="mb-2 text-sm text-slate-400">Calendar month</div>
+              <input
+                type="month"
+                value={month}
+                onChange={(event) => setMonth(event.target.value)}
+                className="w-full rounded-xl border border-slate-800 bg-[#020617] px-3 py-2.5 outline-none focus:border-slate-600"
+              />
+            </CardContent>
+          </Card>
+        </div>
+
+        <Card className="mb-6 border-slate-800 bg-[#0f172a] py-0 text-white ring-0">
           <CardHeader className="px-5 pt-5 pb-0 md:px-6 md:pt-6">
             <CardTitle className="text-xl font-semibold">Worker Results</CardTitle>
           </CardHeader>
@@ -130,7 +169,76 @@ export function AdminPage() {
             )}
           </CardContent>
         </Card>
+
+        <Card className="border-slate-800 bg-[#0f172a] py-0 text-white ring-0">
+          <CardHeader className="px-5 pt-5 pb-0 md:px-6 md:pt-6">
+            <CardTitle className="text-xl font-semibold">Team Daily PnL Calendar</CardTitle>
+          </CardHeader>
+          <CardContent className="px-5 pt-4 pb-5 md:px-6 md:pb-6">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3 xl:grid-cols-7">
+              {calendarDays.map((day) => (
+                <div key={day.date} className="rounded-xl border border-slate-800 bg-[#020617] p-3">
+                  <div className="mb-3 text-sm font-semibold text-white">{day.label}</div>
+                  <div className="space-y-2">
+                    {day.items.length === 0 ? (
+                      <div className="text-xs text-slate-500">No activity</div>
+                    ) : (
+                      day.items.map((item) => (
+                        <div key={`${day.date}-${item.user_id}`} className="rounded-lg border border-slate-800 bg-slate-950 p-2">
+                          <div className="truncate text-xs text-slate-200">
+                            {item.display_name || item.email}
+                          </div>
+                          <div className={`mt-1 text-xs font-semibold ${item.daily_pnl >= 0 ? "text-green-400" : "text-red-400"}`}>
+                            {item.daily_pnl >= 0 ? "+" : ""}${item.daily_pnl.toFixed(2)}
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
       </div>
     </div>
   )
+}
+
+function getCurrentMonthValue() {
+  const now = new Date()
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
+}
+
+function getMonthRange(monthValue) {
+  const [year, month] = monthValue.split("-").map(Number)
+  const start = new Date(year, month - 1, 1)
+  const end = new Date(year, month, 0)
+
+  return {
+    dateFrom: formatDate(start),
+    dateTo: formatDate(end),
+  }
+}
+
+function buildCalendarDays(monthValue, items) {
+  const [year, month] = monthValue.split("-").map(Number)
+  const totalDays = new Date(year, month, 0).getDate()
+
+  return Array.from({ length: totalDays }, (_, index) => {
+    const day = index + 1
+    const date = formatDate(new Date(year, month - 1, day))
+
+    return {
+      date,
+      label: `${String(day).padStart(2, "0")}.${String(month).padStart(2, "0")}`,
+      items: items.filter((item) => item.trade_date === date),
+    }
+  })
+}
+
+function formatDate(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(
+    date.getDate()
+  ).padStart(2, "0")}`
 }

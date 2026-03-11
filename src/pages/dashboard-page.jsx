@@ -14,6 +14,7 @@ import {
   removeTrade,
   resetDashboard,
   saveWorkerProfile,
+  updateTradeNote,
 } from "@/lib/trade-service"
 import { useAuth } from "@/providers/use-auth"
 
@@ -102,6 +103,19 @@ export function DashboardPage() {
       setTrades((current) => current.filter((trade) => trade.id !== tradeId))
     } catch (nextError) {
       setError(nextError.message ?? "Failed to delete trade.")
+    }
+  }
+
+  async function handleUpdateTradeNote(tradeId, note) {
+    try {
+      setError("")
+      const updatedTrade = await updateTradeNote(user.id, tradeId, note)
+      setTrades((current) =>
+        current.map((trade) => (trade.id === tradeId ? updatedTrade : trade))
+      )
+    } catch (nextError) {
+      setError(nextError.message ?? "Failed to save trade comment.")
+      throw nextError
     }
   }
 
@@ -318,8 +332,16 @@ export function DashboardPage() {
         </div>
 
         <div className="mb-8 grid grid-cols-1 gap-6 xl:grid-cols-3">
-          <TradeForm onSubmit={handleAddTrade} />
-          <TradeHistory trades={trades} onDelete={handleDeleteTrade} />
+          <TradeForm
+            onSubmit={handleAddTrade}
+            currentBalance={balance}
+            requireDangerConfirm={showBreakWarning}
+          />
+          <TradeHistory
+            trades={trades}
+            onDelete={handleDeleteTrade}
+            onUpdateNote={handleUpdateTradeNote}
+          />
         </div>
       </div>
     </div>

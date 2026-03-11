@@ -17,6 +17,7 @@ const TRADE_COLUMNS = [
   "rsi",
   "macd",
   "vwap",
+  "note",
   "result",
   "created_at",
 ].join(", ")
@@ -89,6 +90,22 @@ export async function removeTrade(userId, tradeId) {
   if (error) throw error
 }
 
+export async function updateTradeNote(userId, tradeId, note) {
+  const client = requireSupabase()
+
+  const { data, error } = await client
+    .from("trades")
+    .update({ note: note?.trim() || null })
+    .eq("user_id", userId)
+    .eq("id", tradeId)
+    .select(TRADE_COLUMNS)
+    .single()
+
+  if (error) throw error
+
+  return mapTradeFromRow(data)
+}
+
 export async function resetDashboard(userId, startBalance) {
   const client = requireSupabase()
 
@@ -128,6 +145,25 @@ export async function loadWorkerSummaries() {
   }))
 }
 
+export async function loadTeamDailyPnl(dateFrom, dateTo) {
+  const client = requireSupabase()
+
+  const { data, error } = await client.rpc("get_team_daily_pnl", {
+    date_from: dateFrom,
+    date_to: dateTo,
+  })
+
+  if (error) throw error
+
+  return (data ?? []).map((row) => ({
+    trade_date: row.trade_date,
+    user_id: row.user_id,
+    display_name: row.display_name ?? "",
+    email: row.email,
+    daily_pnl: Number(row.daily_pnl ?? 0),
+  }))
+}
+
 function mapTradeToInsert(userId, trade) {
   return {
     id: trade.id,
@@ -145,6 +181,7 @@ function mapTradeToInsert(userId, trade) {
     rsi: trade.rsi || null,
     macd: trade.macd || null,
     vwap: trade.vwap || null,
+    note: trade.note || null,
     result: trade.result,
   }
 }
@@ -165,6 +202,7 @@ function mapTradeFromRow(row) {
     rsi: row.rsi ?? "",
     macd: row.macd ?? "",
     vwap: row.vwap ?? "",
+    note: row.note ?? "",
     result: row.result,
     createdAt: row.created_at,
   }
