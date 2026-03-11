@@ -1,7 +1,17 @@
+import { Navigate, Route, Routes } from "react-router-dom"
+
+import { ProtectedRoute } from "@/components/auth/protected-route"
+import { DashboardPage } from "@/pages/dashboard-page"
+import { LoginPage } from "@/pages/login-page"
+
 export default function App() {
   return (
-    <div className="min-h-screen bg-black text-white flex items-center justify-center text-3xl font-bold">
-      Tailwind works
-    </div>
+    <Routes>
+      <Route path="/login" element={<LoginPage />} />
+      <Route element={<ProtectedRoute />}>
+        <Route path="/" element={<DashboardPage />} />
+      </Route>
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   )
 }
