@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -21,12 +21,26 @@ export function TradeHistory({ trades, onDelete, onUpdateNote }) {
   const [expandedTradeId, setExpandedTradeId] = useState(null)
   const [noteDrafts, setNoteDrafts] = useState({})
   const [isSavingNote, setIsSavingNote] = useState(false)
+  const [page, setPage] = useState(1)
 
   const filteredTrades = useMemo(() => {
     if (!selectedDate) return trades
 
     return trades.filter((trade) => isSameDay(trade.createdAt, selectedDate))
   }, [selectedDate, trades])
+  const paginatedTrades = useMemo(() => filteredTrades.slice(0, 50), [filteredTrades])
+  const totalPages = Math.max(1, Math.ceil(paginatedTrades.length / 5))
+  const currentPage = Math.min(page, totalPages)
+  const visibleTrades = useMemo(() => {
+    const start = (currentPage - 1) * 5
+    return paginatedTrades.slice(start, start + 5)
+  }, [currentPage, paginatedTrades])
+
+  useEffect(() => {
+    if (page > totalPages) {
+      setPage(totalPages)
+    }
+  }, [page, totalPages])
 
   function toggleNote(trade) {
     setExpandedTradeId((current) => (current === trade.id ? null : trade.id))
@@ -111,12 +125,18 @@ export function TradeHistory({ trades, onDelete, onUpdateNote }) {
               <Input
                 type="date"
                 value={selectedDate}
-                onChange={(event) => setSelectedDate(event.target.value)}
+                onChange={(event) => {
+                  setSelectedDate(event.target.value)
+                  setPage(1)
+                }}
                 className="h-10 rounded-xl border-slate-800 bg-slate-950 text-white"
               />
               <Button
                 variant="outline"
-                onClick={() => setSelectedDate("")}
+                onClick={() => {
+                  setSelectedDate("")
+                  setPage(1)
+                }}
                 className="rounded-xl border-slate-700 bg-slate-900 text-white hover:bg-slate-800"
               >
                 Clear
@@ -155,7 +175,7 @@ export function TradeHistory({ trades, onDelete, onUpdateNote }) {
               No trades for the selected period
             </div>
           ) : (
-            filteredTrades.map((trade) => {
+            visibleTrades.map((trade) => {
               const tradeDate = trade.createdAt ? formatDateKey(new Date(trade.createdAt)) : ""
 
               return (
@@ -265,6 +285,33 @@ export function TradeHistory({ trades, onDelete, onUpdateNote }) {
             })
           )}
         </div>
+
+        {filteredTrades.length > 0 ? (
+          <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+            <div className="text-xs text-slate-500">
+              Page {currentPage} of {totalPages}
+              {filteredTrades.length > 50 ? " · showing first 50 trades only" : ""}
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                disabled={currentPage === 1}
+                onClick={() => setPage((current) => Math.max(1, current - 1))}
+                className="rounded-lg border-slate-700 bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-40"
+              >
+                Prev
+              </Button>
+              <Button
+                variant="outline"
+                disabled={currentPage === totalPages}
+                onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+                className="rounded-lg border-slate-700 bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-40"
+              >
+                Next
+              </Button>
+            </div>
+          </div>
+        ) : null}
       </CardContent>
     </Card>
   )

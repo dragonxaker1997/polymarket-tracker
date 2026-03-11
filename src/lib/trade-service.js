@@ -93,13 +93,20 @@ export async function removeTrade(userId, tradeId) {
 export async function updateTradeNote(userId, tradeId, note) {
   const client = requireSupabase()
 
-  const { data, error } = await client
+  const { error: updateError } = await client
     .from("trades")
     .update({ note: note?.trim() || null })
     .eq("user_id", userId)
     .eq("id", tradeId)
+
+  if (updateError) throw updateError
+
+  const { data, error } = await client
+    .from("trades")
     .select(TRADE_COLUMNS)
-    .single()
+    .eq("user_id", userId)
+    .eq("id", tradeId)
+    .maybeSingle()
 
   if (error) throw error
 

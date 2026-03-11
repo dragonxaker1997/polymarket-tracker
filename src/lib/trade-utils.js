@@ -140,9 +140,7 @@ export function getRsiTone(value) {
 export function getTradeRiskState(form, balance) {
   const numericSize = Number(form.size)
   const quickSizes = getQuickSizes(balance)
-  const sizeMatchesRecommendation =
-    Number.isFinite(numericSize) &&
-    quickSizes.some((recommended) => Math.abs(recommended - numericSize) < 0.01)
+  const maxRecommendedSize = Math.max(...quickSizes)
 
   const signals = [
     { key: "time", tone: form.time ? getTimeTone(form.time) : null },
@@ -155,7 +153,8 @@ export function getTradeRiskState(form, balance) {
 
   return {
     quickSizes,
-    showSizeWarning: Number.isFinite(numericSize) && numericSize > 0 && !sizeMatchesRecommendation,
+    showSizeWarning:
+      Number.isFinite(numericSize) && numericSize > 0 && numericSize > maxRecommendedSize,
     showRektRisk: redSignals.length >= 2,
     redSignals,
   }
