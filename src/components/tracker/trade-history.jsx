@@ -54,7 +54,12 @@ export function TradeHistory({ trades, onDelete, onUpdateNote }) {
     setIsSavingNote(true)
 
     try {
-      await onUpdateNote(tradeId, noteDrafts[tradeId] ?? "")
+      const savedNote = (noteDrafts[tradeId] ?? "").trim()
+      await onUpdateNote(tradeId, savedNote)
+      setNoteDrafts((current) => ({
+        ...current,
+        [tradeId]: savedNote,
+      }))
       setExpandedTradeId(null)
     } finally {
       setIsSavingNote(false)
@@ -177,6 +182,7 @@ export function TradeHistory({ trades, onDelete, onUpdateNote }) {
           ) : (
             visibleTrades.map((trade) => {
               const tradeDate = trade.createdAt ? formatDateKey(new Date(trade.createdAt)) : ""
+              const visibleNote = noteDrafts[trade.id] ?? trade.note ?? ""
 
               return (
                 <article key={trade.id} className="rounded-xl border border-slate-800 bg-[#020617] p-4">
@@ -219,13 +225,13 @@ export function TradeHistory({ trades, onDelete, onUpdateNote }) {
                           onClick={() => toggleNote(trade)}
                           className="rounded-lg border-slate-700 bg-slate-900 text-white hover:bg-slate-800"
                         >
-                          {trade.note ? "Edit comment" : "Add comment"}
+                          {visibleNote ? "Edit comment" : "Add comment"}
                         </Button>
                       </div>
 
-                      {trade.note && expandedTradeId !== trade.id ? (
+                      {visibleNote && expandedTradeId !== trade.id ? (
                         <div className="mt-2 rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-300">
-                          {trade.note}
+                          {visibleNote}
                         </div>
                       ) : null}
 

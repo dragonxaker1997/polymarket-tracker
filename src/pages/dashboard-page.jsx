@@ -113,6 +113,7 @@ export function DashboardPage() {
       setTrades((current) =>
         current.map((trade) => (trade.id === tradeId ? updatedTrade : trade))
       )
+      return updatedTrade
     } catch (nextError) {
       setError(nextError.message ?? "Failed to save trade comment.")
       throw nextError
