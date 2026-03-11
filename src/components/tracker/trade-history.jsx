@@ -1,7 +1,6 @@
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { isEntryOk, isTimeValueOk } from "@/lib/trade-utils"
 
 export function TradeHistory({ trades, onDelete }) {
   return (
@@ -36,14 +35,16 @@ export function TradeHistory({ trades, onDelete }) {
                   </div>
 
                   <div className="flex flex-wrap gap-2 pt-1">
-                    <MetricBadge label="ATR" value={trade.atr} ok={Number(trade.atr) >= 40} />
-                    <MetricBadge label="Time" value={trade.time} ok={isTimeValueOk(trade.time)} />
+                    <MetricBadge label="ATR" value={trade.atr} tone={Number(trade.atr) >= 40 ? "green" : "red"} />
+                    <MetricBadge label="Time" value={trade.time} tone={getTimeTone(trade.time)} />
                     <MetricBadge
                       label="Entry"
                       value={`${(Number(trade.entry) * 100).toFixed(0)}¢`}
-                      ok={isEntryOk(trade.entry)}
+                      tone={getEntryTone(trade.entry)}
                     />
-                    {trade.rsi ? <PlainBadge label={`RSI: ${trade.rsi}`} /> : null}
+                    {trade.rsi ? (
+                      <MetricBadge label="RSI" value={trade.rsi} tone={getRsiTone(trade.rsi)} />
+                    ) : null}
                     {trade.macd ? <PlainBadge label={`MACD: ${trade.macd}`} /> : null}
                     {trade.vwap ? <PlainBadge label={`VWAP: ${trade.vwap}`} /> : null}
                   </div>
@@ -88,17 +89,47 @@ function PlainBadge({ label }) {
   )
 }
 
-function MetricBadge({ label, value, ok }) {
+function MetricBadge({ label, value, tone = "red" }) {
   return (
     <Badge
       variant="outline"
-      className={`rounded-full px-3 py-1 text-xs ${
-        ok
-          ? "border-green-500/30 bg-green-500/10 text-green-300"
-          : "border-red-500/30 bg-red-500/10 text-red-300"
-      }`}
+      className={`rounded-full px-3 py-1 text-xs ${getToneClassName(tone)}`}
     >
       {label}: {value}
     </Badge>
   )
+}
+
+function getEntryTone(value) {
+  const cents = Number(value) * 100
+
+  if (!Number.isFinite(cents)) return "red"
+
+  return cents >= 60 && cents <= 72 ? "green" : "red"
+}
+
+function getTimeTone(value) {
+  const numericValue = Number(value)
+
+  if (!Number.isFinite(numericValue)) return "red"
+  if (numericValue >= 5 && numericValue <= 10) return "green"
+  if (numericValue >= 11 && numericValue <= 15) return "yellow"
+  if (numericValue >= 1 && numericValue < 5) return "red"
+
+  return "red"
+}
+
+function getRsiTone(value) {
+  const numericValue = Number(value)
+
+  if (!Number.isFinite(numericValue)) return "red"
+
+  return numericValue >= 40 && numericValue <= 60 ? "green" : "red"
+}
+
+function getToneClassName(tone) {
+  if (tone === "green") return "border-green-500/30 bg-green-500/10 text-green-300"
+  if (tone === "yellow") return "border-amber-500/30 bg-amber-500/10 text-amber-300"
+
+  return "border-red-500/30 bg-red-500/10 text-red-300"
 }

@@ -147,10 +147,48 @@ export function DashboardPage() {
           <div>
             <div className="text-sm uppercase tracking-[0.2em] text-slate-400">Polymarket journal</div>
             <h1 className="mt-2 text-3xl font-bold md:text-5xl">Worker Dashboard</h1>
-            <div className="mt-2 text-sm text-slate-400">{user.email}</div>
           </div>
 
           <div className="flex flex-col gap-3 md:flex-row">
+            <Button
+              asChild
+              variant="outline"
+              className="w-full rounded-xl border-slate-700 bg-slate-900 text-white hover:bg-slate-800 md:w-auto"
+            >
+              <a
+                href="https://polymarket.com/event/btc-updown-15m-1773242100"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Polymarket 15M
+              </a>
+            </Button>
+            <Button
+              asChild
+              variant="outline"
+              className="w-full rounded-xl border-slate-700 bg-slate-900 text-white hover:bg-slate-800 md:w-auto"
+            >
+              <a
+                href="https://www.tradingview.com/chart/w0q6KINR/"
+                target="_blank"
+                rel="noreferrer"
+              >
+                TradingView
+              </a>
+            </Button>
+            <Button
+              asChild
+              variant="outline"
+              className="w-full rounded-xl border-slate-700 bg-slate-900 text-white hover:bg-slate-800 md:w-auto"
+            >
+              <a
+                href="https://terminal.polysigma.io/"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Terminal
+              </a>
+            </Button>
             {isAdminUser(user.email) ? (
               <Button
                 asChild
@@ -228,6 +266,33 @@ export function DashboardPage() {
                 <QuickSizeCard label="15%" value={quickSizes[1]} />
                 <QuickSizeCard label="20%" value={quickSizes[2]} />
               </div>
+
+              <div className="mt-5 rounded-xl border border-slate-800 bg-[#020617] p-4">
+                <div className="text-sm font-medium text-slate-300">Stop loss guide</div>
+                <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <RiskGuideCard label="12% size" sizeValue={quickSizes[0]} />
+                  <RiskGuideCard label="15% size" sizeValue={quickSizes[1]} />
+                  <RiskGuideCard label="20% size" sizeValue={quickSizes[2]} />
+                </div>
+              </div>
+
+              <div className="mt-5 rounded-xl border border-slate-800 bg-[#020617] p-4">
+                <div className="text-sm font-medium text-slate-300">Market sessions</div>
+                <div className="mt-3 space-y-2 text-sm text-slate-400">
+                  <div>
+                    <span className="text-slate-200">05:00 UTC - 11:00 UTC</span>: good market
+                  </div>
+                  <div>
+                    <span className="text-slate-200">11:00 UTC - 14:00 UTC</span>: high volatility
+                  </div>
+                  <div>
+                    <span className="text-slate-200">14:00 UTC - 00:00 UTC</span>: dead market
+                  </div>
+                </div>
+                <div className="mt-4 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm font-medium text-amber-200">
+                  On FRS meeting days, do not trade from 11:00 UTC at all.
+                </div>
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -266,6 +331,18 @@ function QuickSizeCard({ label, value }) {
     <div className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-3 text-center">
       <div className="text-xs text-slate-400">{label}</div>
       <div className="mt-1 font-semibold text-slate-100">${value.toFixed(2)}</div>
+    </div>
+  )
+}
+
+function RiskGuideCard({ label, sizeValue }) {
+  const stopLoss = sizeValue * 0.25
+
+  return (
+    <div className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-3 text-center">
+      <div className="text-xs text-slate-400">{label}</div>
+      <div className="mt-1 text-lg font-semibold text-slate-100">${stopLoss.toFixed(2)}</div>
+      <div className="mt-1 text-xs text-slate-500">stop loss 25% of size</div>
     </div>
   )
 }
