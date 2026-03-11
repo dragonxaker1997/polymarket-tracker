@@ -3,9 +3,13 @@ export const DEFAULT_START_BALANCE = 47
 export function normalizePrice(value) {
   const numericValue = Number(value)
 
-  if (!Number.isFinite(numericValue)) return 0
+  if (!Number.isFinite(numericValue)) return null
 
-  return numericValue > 1 ? numericValue / 100 : numericValue
+  const normalizedValue = numericValue > 1 ? numericValue / 100 : numericValue
+
+  if (normalizedValue < 0 || normalizedValue > 1) return null
+
+  return normalizedValue
 }
 
 export function createTrade(form) {
@@ -14,7 +18,8 @@ export function createTrade(form) {
   const exit = normalizePrice(form.exit)
 
   if (!Number.isFinite(numericSize) || numericSize <= 0) return null
-  if (entry <= 0 || exit <= 0) return null
+  if (entry === null || exit === null) return null
+  if (entry <= 0) return null
 
   const shares = numericSize / entry
   const totalExitValue = shares * exit
@@ -43,8 +48,8 @@ export function getTradePreview(size, entry, exit) {
   const previewSize = Number(size) || 0
   const previewEntry = normalizePrice(entry)
   const previewExit = normalizePrice(exit)
-  const previewShares = previewEntry > 0 ? previewSize / previewEntry : 0
-  const previewTotalExitValue = previewShares * previewExit
+  const previewShares = previewEntry && previewEntry > 0 ? previewSize / previewEntry : 0
+  const previewTotalExitValue = previewShares * (previewExit ?? 0)
   const previewPnl = previewTotalExitValue - previewSize
 
   return {

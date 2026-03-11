@@ -27,8 +27,10 @@
 - [`src/providers/auth-provider.jsx`](./src/providers/auth-provider.jsx) управляет сессией.
 - [`src/pages/login-page.jsx`](./src/pages/login-page.jsx) содержит вход и создание воркер-аккаунтов.
 - [`src/pages/dashboard-page.jsx`](./src/pages/dashboard-page.jsx) содержит дашборд воркера.
+- [`src/pages/admin-page.jsx`](./src/pages/admin-page.jsx) содержит сводку по всем воркерам для главного аккаунта.
 - [`src/lib/trade-utils.js`](./src/lib/trade-utils.js) содержит бизнес-логику и вычисления.
 - [`src/lib/trade-service.js`](./src/lib/trade-service.js) работает с данными в Supabase.
+- [`src/lib/admin.js`](./src/lib/admin.js) определяет, какой email считается админом.
 - [`src/lib/supabase.js`](./src/lib/supabase.js) создает клиент Supabase.
 - [`src/components/tracker`](./src/components/tracker) содержит основные части интерфейса трекера.
 - [`src/components/ui`](./src/components/ui) содержит базовые UI-примитивы.
@@ -42,6 +44,7 @@
 ```bash
 VITE_SUPABASE_URL=your-project-url
 VITE_SUPABASE_ANON_KEY=your-anon-key
+VITE_ADMIN_EMAIL=your-admin-email@example.com
 ```
 
 4. Выполни SQL в Supabase SQL Editor:
@@ -111,7 +114,105 @@ on public.trades
 for delete
 to authenticated
 using (auth.uid() = user_id);
+
+create or replace function public.get_worker_summaries()
+returns table (
+  user_id uuid,
+  email text,
+  start_balance numeric,
+  total_pnl numeric,
+  streak_count integer,
+  streak_label text,
+  win_rate numeric,
+  trades_count bigint
+)
+language sql
+security definer
+set search_path = public, auth
+as $$
+  with admin_check as (
+    select 1
+    from auth.users
+    where id = auth.uid()
+      and lower(email) = lower('YOUR_ADMIN_EMAIL')
+  ),
+  ranked_trades as (
+    select
+      t.*,
+      first_value(t.result) over (
+        partition by t.user_id
+        order by t.created_at desc, t.id desc
+      ) as latest_result
+    from public.trades t
+  ),
+  streak_groups as (
+    select
+      rt.*,
+      sum(
+        case
+          when rt.result = rt.latest_result then 0
+          else 1
+        end
+      ) over (
+        partition by rt.user_id
+        order by rt.created_at desc, rt.id desc
+        rows between unbounded preceding and current row
+      ) as mismatch_group
+    from ranked_trades rt
+  ),
+  streaks as (
+    select
+      user_id,
+      count(*)::integer as streak_count,
+      max(latest_result)::text as streak_label
+    from streak_groups
+    where mismatch_group = 0
+    group by user_id
+  ),
+  summary as (
+    select
+      u.id as user_id,
+      u.email::text as email,
+      coalesce(p.start_balance, 47) as start_balance,
+      coalesce(sum(t.pnl), 0) as total_pnl,
+      count(t.id) as trades_count,
+      coalesce(sum(case when t.result = 'win' then 1 else 0 end), 0) as wins
+    from auth.users u
+    left join public.profiles p on p.user_id = u.id
+    left join public.trades t on t.user_id = u.id
+    group by u.id, u.email, p.start_balance
+  )
+  select
+    s.user_id,
+    s.email,
+    s.start_balance,
+    s.total_pnl,
+    coalesce(st.streak_count, 0) as streak_count,
+    case
+      when coalesce(st.streak_label, '-') = 'win' then 'W'
+      when coalesce(st.streak_label, '-') = 'loss' then 'L'
+      else '-'
+    end as streak_label,
+    case
+      when s.trades_count = 0 then 0
+      else (s.wins::numeric / s.trades_count::numeric) * 100
+    end as win_rate,
+    s.trades_count
+  from summary s
+  left join streaks st on st.user_id = s.user_id
+  where exists (select 1 from admin_check)
+  order by s.email;
+$$;
+
+revoke all on function public.get_worker_summaries() from public;
+grant execute on function public.get_worker_summaries() to authenticated;
 ```
+
+5. Для админ-страницы:
+
+- в `.env.local` и в Vercel добавь `VITE_ADMIN_EMAIL` с твоим email;
+- в SQL выше замени `YOUR_ADMIN_EMAIL` на тот же email;
+- после изменения env на Vercel нажми `Redeploy`.
 
 ## Запуск
 

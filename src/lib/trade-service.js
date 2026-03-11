@@ -105,6 +105,25 @@ export async function resetDashboard(userId, startBalance) {
   if (profileError) throw profileError
 }
 
+export async function loadWorkerSummaries() {
+  const client = requireSupabase()
+
+  const { data, error } = await client.rpc("get_worker_summaries")
+
+  if (error) throw error
+
+  return (data ?? []).map((row) => ({
+    user_id: row.user_id,
+    email: row.email,
+    start_balance: Number(row.start_balance ?? 0),
+    total_pnl: Number(row.total_pnl ?? 0),
+    streak_count: Number(row.streak_count ?? 0),
+    streak_label: row.streak_label ?? "-",
+    win_rate: Number(row.win_rate ?? 0),
+    trades_count: Number(row.trades_count ?? 0),
+  }))
+}
+
 function mapTradeToInsert(userId, trade) {
   return {
     id: trade.id,

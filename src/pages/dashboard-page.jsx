@@ -1,10 +1,12 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from "react"
+import { Link } from "react-router-dom"
 
 import { SummaryCards } from "@/components/tracker/summary-cards"
 import { TradeForm } from "@/components/tracker/trade-form"
 import { TradeHistory } from "@/components/tracker/trade-history"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import { isAdminUser } from "@/lib/admin"
 import { DEFAULT_START_BALANCE, buildEquityData, createTrade, getTradeStats } from "@/lib/trade-utils"
 import {
   insertTrade,
@@ -133,6 +135,15 @@ export function DashboardPage() {
           </div>
 
           <div className="flex flex-col gap-3 md:flex-row">
+            {isAdminUser(user.email) ? (
+              <Button
+                asChild
+                variant="outline"
+                className="w-full rounded-xl border-slate-700 bg-slate-900 text-white hover:bg-slate-800 md:w-auto"
+              >
+                <Link to="/admin">Admin overview</Link>
+              </Button>
+            ) : null}
             <Button
               variant="destructive"
               onClick={handleResetAll}

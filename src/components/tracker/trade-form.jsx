@@ -75,6 +75,9 @@ export function TradeForm({ onSubmit }) {
           <div className="mt-2 text-slate-400">
             Можно вводить цену как 0.66 / 0.96 или как 66 / 96, сайт воспримет это как центы.
           </div>
+          <div className="mt-2 text-slate-400">
+            Для полного лося можно ставить `Exit price = 0`.
+          </div>
           <div className="mt-3 text-slate-300">Preview Shares: {preview.previewShares.toFixed(2)}</div>
           <div className="mt-1 text-slate-300">
             Preview Total: ${preview.previewTotalExitValue.toFixed(2)}
