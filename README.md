@@ -52,8 +52,12 @@ VITE_ADMIN_EMAIL=your-admin-email@example.com
 ```sql
 create table if not exists public.profiles (
   user_id uuid primary key references auth.users(id) on delete cascade,
-  start_balance numeric not null default 47
+  start_balance numeric not null default 47,
+  display_name text
 );
+
+alter table public.profiles
+add column if not exists display_name text;
 
 create table if not exists public.trades (
   id bigint primary key,
@@ -118,6 +122,7 @@ using (auth.uid() = user_id);
 create or replace function public.get_worker_summaries()
 returns table (
   user_id uuid,
+  display_name text,
   email text,
   start_balance numeric,
   total_pnl numeric,
@@ -184,6 +189,7 @@ as $$
   )
   select
     s.user_id,
+    coalesce(nullif(trim(p.display_name), ''), null) as display_name,
     s.email,
     s.start_balance,
     s.total_pnl,
@@ -199,6 +205,7 @@ as $$
     end as win_rate,
     s.trades_count
   from summary s
+  left join public.profiles p on p.user_id = s.user_id
   left join streaks st on st.user_id = s.user_id
   where exists (select 1 from admin_check)
   order by s.email;
@@ -213,6 +220,7 @@ grant execute on function public.get_worker_summaries() to authenticated;
 - в `.env.local` и в Vercel добавь `VITE_ADMIN_EMAIL` с твоим email;
 - в SQL выше замени `YOUR_ADMIN_EMAIL` на тот же email;
 - после изменения env на Vercel нажми `Redeploy`.
+- воркер может сам заполнить `Worker name` на своем дашборде, и в админке будет показываться оно вместо email.
 
 ## Запуск
 

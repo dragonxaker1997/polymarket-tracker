@@ -100,7 +100,14 @@ export function AdminPage() {
                   <tbody>
                     {workers.map((worker) => (
                       <tr key={worker.user_id} className="border-b border-slate-900/80">
-                        <td className="px-6 py-4 font-medium text-white">{worker.email}</td>
+                        <td className="px-6 py-4">
+                          <div className="font-medium text-white">
+                            {worker.display_name || worker.email}
+                          </div>
+                          {worker.display_name ? (
+                            <div className="mt-1 text-xs text-slate-500">{worker.email}</div>
+                          ) : null}
+                        </td>
                         <td className="px-6 py-4 text-slate-300">${worker.start_balance.toFixed(2)}</td>
                         <td
                           className={`px-6 py-4 font-medium ${

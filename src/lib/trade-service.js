@@ -1,6 +1,6 @@
 import { supabase } from "@/lib/supabase"
 
-const PROFILE_COLUMNS = "user_id, start_balance"
+const PROFILE_COLUMNS = "user_id, start_balance, display_name"
 const TRADE_COLUMNS = [
   "id",
   "user_id",
@@ -47,17 +47,19 @@ export async function loadDashboard(userId, fallbackStartBalance) {
 
   return {
     startBalance: Number(profile?.start_balance ?? fallbackStartBalance),
+    displayName: profile?.display_name ?? "",
     trades: (trades ?? []).map(mapTradeFromRow),
   }
 }
 
-export async function saveStartBalance(userId, startBalance) {
+export async function saveWorkerProfile(userId, profile) {
   const client = requireSupabase()
 
   const { error } = await client.from("profiles").upsert(
     {
       user_id: userId,
-      start_balance: startBalance,
+      start_balance: profile.startBalance,
+      display_name: profile.displayName?.trim() || null,
     },
     { onConflict: "user_id" }
   )
@@ -96,6 +98,7 @@ export async function resetDashboard(userId, startBalance) {
       {
         user_id: userId,
         start_balance: startBalance,
+        display_name: null,
       },
       { onConflict: "user_id" }
     ),
@@ -114,6 +117,7 @@ export async function loadWorkerSummaries() {
 
   return (data ?? []).map((row) => ({
     user_id: row.user_id,
+    display_name: row.display_name ?? "",
     email: row.email,
     start_balance: Number(row.start_balance ?? 0),
     total_pnl: Number(row.total_pnl ?? 0),

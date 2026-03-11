@@ -13,7 +13,7 @@ import {
   loadDashboard,
   removeTrade,
   resetDashboard,
-  saveStartBalance,
+  saveWorkerProfile,
 } from "@/lib/trade-service"
 import { useAuth } from "@/providers/use-auth"
 
@@ -27,8 +27,9 @@ export function DashboardPage() {
   const { signOut, user } = useAuth()
   const [trades, setTrades] = useState([])
   const [startBalance, setStartBalance] = useState(DEFAULT_START_BALANCE)
+  const [displayName, setDisplayName] = useState("")
   const [isBootstrapping, setIsBootstrapping] = useState(true)
-  const [isSavingBalance, setIsSavingBalance] = useState(false)
+  const [isSavingProfile, setIsSavingProfile] = useState(false)
   const [error, setError] = useState("")
 
   useEffect(() => {
@@ -44,6 +45,7 @@ export function DashboardPage() {
         if (!active) return
         setTrades(dashboard.trades)
         setStartBalance(dashboard.startBalance)
+        setDisplayName(dashboard.displayName)
       } catch (nextError) {
         if (!active) return
         setError(nextError.message ?? "Failed to load dashboard.")
@@ -61,7 +63,18 @@ export function DashboardPage() {
     }
   }, [user.id])
 
-  const { totalPnL, balance, wins, winRate, streak, streakLabel, quickSizes } = useMemo(
+  const {
+    totalPnL,
+    dailyPnL,
+    balance,
+    wins,
+    winRate,
+    streak,
+    streakLabel,
+    showBreakWarning,
+    showDrawdownWarning,
+    quickSizes,
+  } = useMemo(
     () => getTradeStats(trades, startBalance),
     [trades, startBalance]
   )
@@ -103,15 +116,18 @@ export function DashboardPage() {
     }
   }
 
-  async function handleStartBalanceBlur() {
+  async function handleProfileBlur() {
     try {
-      setIsSavingBalance(true)
+      setIsSavingProfile(true)
       setError("")
-      await saveStartBalance(user.id, startBalance)
+      await saveWorkerProfile(user.id, {
+        startBalance,
+        displayName,
+      })
     } catch (nextError) {
-      setError(nextError.message ?? "Failed to save start balance.")
+      setError(nextError.message ?? "Failed to save worker profile.")
     } finally {
-      setIsSavingBalance(false)
+      setIsSavingProfile(false)
     }
   }
 
@@ -167,19 +183,39 @@ export function DashboardPage() {
           </div>
         ) : null}
 
+        {showBreakWarning ? (
+          <div className="mb-4 rounded-xl border border-red-500/40 bg-red-500/15 p-4 text-sm font-medium text-red-200">
+            Loss streak reached 5 or more. Take a break before the next trade.
+          </div>
+        ) : null}
+
+        {showDrawdownWarning ? (
+          <div className="mb-6 rounded-xl border border-red-500/40 bg-red-500/15 p-4 text-sm font-medium text-red-200">
+            Loss exceeds 20% of current balance. Stop trading and review the session.
+          </div>
+        ) : null}
+
         <div className="mb-8 grid grid-cols-1 gap-6 lg:grid-cols-2">
           <Card className="border-slate-800 bg-[#0f172a] py-0 text-white ring-0">
             <CardContent className="px-5 pt-5 pb-5">
+              <div className="mb-2 text-sm text-slate-400">Worker name</div>
+              <input
+                className="mb-4 w-full rounded-xl border border-slate-800 bg-[#020617] px-3 py-2.5 outline-none focus:border-slate-600"
+                value={displayName}
+                onChange={(event) => setDisplayName(event.target.value)}
+                onBlur={handleProfileBlur}
+                placeholder="Enter your worker name"
+              />
               <div className="mb-2 text-sm text-slate-400">Start balance</div>
               <input
                 className="w-full rounded-xl border border-slate-800 bg-[#020617] px-3 py-2.5 outline-none focus:border-slate-600"
                 value={startBalance}
                 onChange={(event) => setStartBalance(Number(event.target.value) || 0)}
-                onBlur={handleStartBalanceBlur}
+                onBlur={handleProfileBlur}
                 placeholder="Start balance"
               />
               <div className="mt-2 text-xs text-slate-500">
-                {isSavingBalance ? "Saving..." : "Saved per worker account."}
+                {isSavingProfile ? "Saving..." : "Saved per worker account."}
               </div>
             </CardContent>
           </Card>
@@ -201,6 +237,7 @@ export function DashboardPage() {
             balance={balance}
             startBalance={startBalance}
             totalPnL={totalPnL}
+            dailyPnL={dailyPnL}
             tradesCount={trades.length}
             streak={streak}
             streakLabel={streakLabel}

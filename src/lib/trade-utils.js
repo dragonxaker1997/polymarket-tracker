@@ -64,6 +64,11 @@ export function getTradeStats(trades, startBalance) {
   const balance = startBalance + totalPnL
   const wins = trades.filter((trade) => trade.result === "win").length
   const winRate = trades.length ? (wins / trades.length) * 100 : 0
+  const dailyPnL = trades.reduce((sum, trade) => {
+    if (!isTradeFromToday(trade.createdAt)) return sum
+
+    return sum + (Number(trade.pnl) || 0)
+  }, 0)
 
   let streak = 0
   let streakLabel = "-"
@@ -83,8 +88,11 @@ export function getTradeStats(trades, startBalance) {
     balance,
     wins,
     winRate,
+    dailyPnL,
     streak,
     streakLabel,
+    showBreakWarning: streakLabel === "L" && streak >= 5,
+    showDrawdownWarning: balance > 0 && totalPnL < 0 && Math.abs(totalPnL) >= balance * 0.2,
     quickSizes: [0.12, 0.15, 0.2].map((ratio) => balance * ratio),
   }
 }
@@ -118,4 +126,19 @@ export function isEntryOk(value) {
   const cents = Number(value) * 100
 
   return Number.isFinite(cents) && cents >= 50 && cents <= 72
+}
+
+function isTradeFromToday(createdAt) {
+  if (!createdAt) return false
+
+  const tradeDate = new Date(createdAt)
+  const now = new Date()
+
+  if (Number.isNaN(tradeDate.getTime())) return false
+
+  return (
+    tradeDate.getFullYear() === now.getFullYear() &&
+    tradeDate.getMonth() === now.getMonth() &&
+    tradeDate.getDate() === now.getDate()
+  )
 }
