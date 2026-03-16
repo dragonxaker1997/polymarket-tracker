@@ -35,8 +35,10 @@ const CHECKLIST_ROWS = [
   ["HL10", "Break HL10 High", "Break HL10 Low"],
 ]
 
-export function TradeForm({ onSubmit, currentBalance, requireDangerConfirm }) {
+export function TradeForm({ onSubmit, onAddWithdrawal, currentBalance, requireDangerConfirm }) {
   const [form, setForm] = useState(EMPTY_FORM)
+  const [withdrawalAmount, setWithdrawalAmount] = useState("")
+  const [withdrawalNote, setWithdrawalNote] = useState("")
 
   const preview = useMemo(
     () => getTradePreview(form.size, form.entry, form.exit),
@@ -67,6 +69,15 @@ export function TradeForm({ onSubmit, currentBalance, requireDangerConfirm }) {
 
     if (await created) {
       setForm(EMPTY_FORM)
+    }
+  }
+
+  async function handleAddWithdrawal() {
+    const created = await onAddWithdrawal(withdrawalAmount, withdrawalNote)
+
+    if (created) {
+      setWithdrawalAmount("")
+      setWithdrawalNote("")
     }
   }
 
@@ -117,6 +128,30 @@ export function TradeForm({ onSubmit, currentBalance, requireDangerConfirm }) {
         <Button onClick={handleSubmit} className="mt-4 h-11 w-full rounded-xl bg-green-600 text-white hover:bg-green-500">
           Add trade
         </Button>
+
+        <div className="mt-4 rounded-xl border border-slate-800 bg-[#020617] p-4">
+          <div className="mb-3 text-sm font-medium text-slate-300">Add withdrawal</div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <Input
+              placeholder="Withdrawal amount $"
+              value={withdrawalAmount}
+              onChange={(event) => setWithdrawalAmount(event.target.value)}
+              className="h-11 rounded-xl border-slate-800 bg-slate-950 px-3 text-white placeholder:text-slate-500"
+            />
+            <Input
+              placeholder="Withdrawal note"
+              value={withdrawalNote}
+              onChange={(event) => setWithdrawalNote(event.target.value)}
+              className="h-11 rounded-xl border-slate-800 bg-slate-950 px-3 text-white placeholder:text-slate-500"
+            />
+          </div>
+          <Button
+            onClick={handleAddWithdrawal}
+            className="mt-3 h-11 w-full rounded-xl bg-slate-100 text-slate-950 hover:bg-white"
+          >
+            Add withdrawal
+          </Button>
+        </div>
 
         <div className="mt-6 overflow-hidden rounded-2xl border border-slate-800 bg-[#08112a]">
           <div className="border-b border-slate-800 bg-[linear-gradient(135deg,#45308c,#5a3ca0)] px-4 py-3 text-lg font-semibold text-white">

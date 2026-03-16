@@ -7,14 +7,21 @@ import { TradeHistory } from "@/components/tracker/trade-history"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { isAdminUser } from "@/lib/admin"
-import { DEFAULT_START_BALANCE, buildEquityData, createTrade, getTradeStats } from "@/lib/trade-utils"
 import {
+  DEFAULT_START_BALANCE,
+  buildEquityData,
+  createTrade,
+  createWithdrawal,
+  getTradeStats,
+} from "@/lib/trade-utils"
+import {
+  insertWithdrawal,
   insertTrade,
   loadDashboard,
-  removeTrade,
+  removeRecord,
   resetDashboard,
   saveWorkerProfile,
-  updateTradeNote,
+  updateRecordNote,
 } from "@/lib/trade-service"
 import { useAuth } from "@/providers/use-auth"
 
@@ -26,7 +33,7 @@ const BalanceChart = lazy(() =>
 
 export function DashboardPage() {
   const { signOut, user } = useAuth()
-  const [trades, setTrades] = useState([])
+  const [records, setRecords] = useState([])
   const [startBalance, setStartBalance] = useState(DEFAULT_START_BALANCE)
   const [displayName, setDisplayName] = useState("")
   const [isBootstrapping, setIsBootstrapping] = useState(true)
@@ -44,7 +51,7 @@ export function DashboardPage() {
         const dashboard = await loadDashboard(user.id, DEFAULT_START_BALANCE)
 
         if (!active) return
-        setTrades(dashboard.trades)
+        setRecords(dashboard.records)
         setStartBalance(dashboard.startBalance)
         setDisplayName(dashboard.displayName)
       } catch (nextError) {
@@ -76,10 +83,10 @@ export function DashboardPage() {
     showDrawdownWarning,
     quickSizes,
   } = useMemo(
-    () => getTradeStats(trades, startBalance),
-    [trades, startBalance]
+    () => getTradeStats(records, startBalance),
+    [records, startBalance]
   )
-  const equityData = useMemo(() => buildEquityData(trades, startBalance), [trades, startBalance])
+  const equityData = useMemo(() => buildEquityData(records, startBalance), [records, startBalance])
 
   async function handleAddTrade(form) {
     const trade = createTrade(form)
@@ -88,7 +95,7 @@ export function DashboardPage() {
     try {
       setError("")
       const savedTrade = await insertTrade(user.id, trade)
-      setTrades((current) => [savedTrade, ...current])
+      setRecords((current) => [savedTrade, ...current])
       return true
     } catch (nextError) {
       setError(nextError.message ?? "Failed to save trade.")
@@ -96,26 +103,43 @@ export function DashboardPage() {
     }
   }
 
-  async function handleDeleteTrade(tradeId) {
+  async function handleAddWithdrawal(amount, note) {
+    const withdrawal = createWithdrawal(amount, note)
+    if (!withdrawal) return false
+
     try {
       setError("")
-      await removeTrade(user.id, tradeId)
-      setTrades((current) => current.filter((trade) => trade.id !== tradeId))
+      const savedWithdrawal = await insertWithdrawal(user.id, withdrawal)
+      setRecords((current) => [savedWithdrawal, ...current])
+      return true
     } catch (nextError) {
-      setError(nextError.message ?? "Failed to delete trade.")
+      setError(nextError.message ?? "Failed to save withdrawal.")
+      return false
     }
   }
 
-  async function handleUpdateTradeNote(tradeId, note) {
+  async function handleDeleteRecord(record) {
     try {
       setError("")
-      const updatedTrade = await updateTradeNote(user.id, tradeId, note)
-      setTrades((current) =>
-        current.map((trade) => (trade.id === tradeId ? updatedTrade : trade))
-      )
-      return updatedTrade
+      await removeRecord(user.id, record)
+      setRecords((current) => current.filter((item) => item.id !== record.id || item.recordType !== record.recordType))
     } catch (nextError) {
-      setError(nextError.message ?? "Failed to save trade comment.")
+      setError(nextError.message ?? "Failed to delete history item.")
+    }
+  }
+
+  async function handleUpdateRecordNote(record, note) {
+    try {
+      setError("")
+      const updatedRecord = await updateRecordNote(user.id, record, note)
+      setRecords((current) =>
+        current.map((item) =>
+          item.id === record.id && item.recordType === record.recordType ? updatedRecord : item
+        )
+      )
+      return updatedRecord
+    } catch (nextError) {
+      setError(nextError.message ?? "Failed to save history comment.")
       throw nextError
     }
   }
@@ -124,7 +148,7 @@ export function DashboardPage() {
     try {
       setError("")
       await resetDashboard(user.id, DEFAULT_START_BALANCE)
-      setTrades([])
+      setRecords([])
       setStartBalance(DEFAULT_START_BALANCE)
     } catch (nextError) {
       setError(nextError.message ?? "Failed to reset dashboard.")
@@ -318,7 +342,7 @@ export function DashboardPage() {
             startBalance={startBalance}
             totalPnL={totalPnL}
             dailyPnL={dailyPnL}
-            tradesCount={trades.length}
+            tradesCount={records.filter((record) => record.recordType !== "withdrawal").length}
             streak={streak}
             streakLabel={streakLabel}
             winRate={winRate}
@@ -335,13 +359,14 @@ export function DashboardPage() {
         <div className="mb-8 grid grid-cols-1 gap-6 xl:grid-cols-3">
           <TradeForm
             onSubmit={handleAddTrade}
+            onAddWithdrawal={handleAddWithdrawal}
             currentBalance={balance}
             requireDangerConfirm={showBreakWarning}
           />
           <TradeHistory
-            trades={trades}
-            onDelete={handleDeleteTrade}
-            onUpdateNote={handleUpdateTradeNote}
+            trades={records}
+            onDelete={handleDeleteRecord}
+            onUpdateNote={handleUpdateRecordNote}
           />
         </div>
       </div>

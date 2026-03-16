@@ -27,7 +27,9 @@ export function createTrade(form) {
 
   return {
     id: Date.now(),
+    recordType: "trade",
     size: numericSize,
+    amount: numericSize,
     entry,
     exit,
     rawEntry: form.entry,
@@ -42,6 +44,23 @@ export function createTrade(form) {
     vwap: form.vwap,
     note: form.note ?? "",
     result: pnl >= 0 ? "win" : "loss",
+    balanceImpact: pnl,
+  }
+}
+
+export function createWithdrawal(amount, note = "") {
+  const numericAmount = Number(amount)
+
+  if (!Number.isFinite(numericAmount) || numericAmount <= 0) return null
+
+  return {
+    id: Date.now(),
+    recordType: "withdrawal",
+    amount: numericAmount,
+    pnl: 0,
+    balanceImpact: -numericAmount,
+    note,
+    result: "withdrawal",
   }
 }
 
@@ -61,11 +80,16 @@ export function getTradePreview(size, entry, exit) {
 }
 
 export function getTradeStats(trades, startBalance) {
-  const totalPnL = trades.reduce((sum, trade) => sum + (Number(trade.pnl) || 0), 0)
-  const balance = startBalance + totalPnL
-  const wins = trades.filter((trade) => trade.result === "win").length
-  const winRate = trades.length ? (wins / trades.length) * 100 : 0
-  const dailyPnL = trades.reduce((sum, trade) => {
+  const tradeRecords = trades.filter((trade) => trade.recordType !== "withdrawal")
+  const totalPnL = tradeRecords.reduce((sum, trade) => sum + (Number(trade.pnl) || 0), 0)
+  const totalBalanceImpact = trades.reduce(
+    (sum, trade) => sum + Number(trade.balanceImpact ?? trade.pnl ?? 0),
+    0
+  )
+  const balance = startBalance + totalBalanceImpact
+  const wins = tradeRecords.filter((trade) => trade.result === "win").length
+  const winRate = tradeRecords.length ? (wins / tradeRecords.length) * 100 : 0
+  const dailyPnL = tradeRecords.reduce((sum, trade) => {
     if (!isTradeFromToday(trade.createdAt)) return sum
 
     return sum + (Number(trade.pnl) || 0)
@@ -74,11 +98,11 @@ export function getTradeStats(trades, startBalance) {
   let streak = 0
   let streakLabel = "-"
 
-  if (trades.length) {
-    const currentType = trades[0].result
+  if (tradeRecords.length) {
+    const currentType = tradeRecords[0].result
     streakLabel = currentType === "win" ? "W" : "L"
 
-    for (const trade of trades) {
+    for (const trade of tradeRecords) {
       if (trade.result !== currentType) break
       streak += 1
     }
@@ -166,7 +190,9 @@ export function buildEquityData(trades, startBalance) {
   return chronologicalTrades.reduce(
     (points, trade, index) => {
       const previousBalance = points[points.length - 1].balance
-      const nextBalance = Number((previousBalance + (Number(trade.pnl) || 0)).toFixed(2))
+      const nextBalance = Number(
+        (previousBalance + Number(trade.balanceImpact ?? trade.pnl ?? 0)).toFixed(2)
+      )
 
       points.push({
         name: String(index + 1),

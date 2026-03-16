@@ -1,6 +1,13 @@
 import { supabase } from "@/lib/supabase"
 
 const PROFILE_COLUMNS = "user_id, start_balance, display_name"
+const TRANSACTION_COLUMNS = [
+  "id",
+  "user_id",
+  "amount",
+  "note",
+  "created_at",
+].join(", ")
 const TRADE_COLUMNS = [
   "id",
   "user_id",
@@ -33,7 +40,11 @@ function requireSupabase() {
 export async function loadDashboard(userId, fallbackStartBalance) {
   const client = requireSupabase()
 
-  const [{ data: profile, error: profileError }, { data: trades, error: tradesError }] =
+  const [
+    { data: profile, error: profileError },
+    { data: trades, error: tradesError },
+    { data: transactions, error: transactionsError },
+  ] =
     await Promise.all([
       client.from("profiles").select(PROFILE_COLUMNS).eq("user_id", userId).maybeSingle(),
       client
@@ -41,15 +52,22 @@ export async function loadDashboard(userId, fallbackStartBalance) {
         .select(TRADE_COLUMNS)
         .eq("user_id", userId)
         .order("created_at", { ascending: false }),
+      client
+        .from("balance_transactions")
+        .select(TRANSACTION_COLUMNS)
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false }),
     ])
 
   if (profileError) throw profileError
   if (tradesError) throw tradesError
+  if (transactionsError) throw transactionsError
 
   return {
     startBalance: Number(profile?.start_balance ?? fallbackStartBalance),
     displayName: profile?.display_name ?? "",
-    trades: (trades ?? []).map(mapTradeFromRow),
+    records: [...(trades ?? []).map(mapTradeFromRow), ...(transactions ?? []).map(mapTransactionFromRow)]
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
   }
 }
 
@@ -82,42 +100,81 @@ export async function insertTrade(userId, trade) {
   return mapTradeFromRow(data)
 }
 
-export async function removeTrade(userId, tradeId) {
+export async function insertWithdrawal(userId, withdrawal) {
   const client = requireSupabase()
 
-  const { error } = await client.from("trades").delete().eq("user_id", userId).eq("id", tradeId)
+  const { data, error } = await client
+    .from("balance_transactions")
+    .insert({
+      id: withdrawal.id,
+      user_id: userId,
+      amount: withdrawal.amount,
+      note: withdrawal.note || null,
+    })
+    .select(TRANSACTION_COLUMNS)
+    .single()
+
+  if (error) throw error
+
+  return mapTransactionFromRow(data)
+}
+
+export async function removeRecord(userId, record) {
+  const client = requireSupabase()
+
+  const { error } =
+    record.recordType === "withdrawal"
+      ? await client.from("balance_transactions").delete().eq("user_id", userId).eq("id", record.id)
+      : await client.from("trades").delete().eq("user_id", userId).eq("id", record.id)
 
   if (error) throw error
 }
 
-export async function updateTradeNote(userId, tradeId, note) {
+export async function updateRecordNote(userId, record, note) {
   const client = requireSupabase()
 
-  const { error: updateError } = await client
-    .from("trades")
-    .update({ note: note?.trim() || null })
-    .eq("user_id", userId)
-    .eq("id", tradeId)
+  const trimmedNote = note?.trim() || null
+  const { error: updateError } =
+    record.recordType === "withdrawal"
+      ? await client
+          .from("balance_transactions")
+          .update({ note: trimmedNote })
+          .eq("user_id", userId)
+          .eq("id", record.id)
+      : await client
+          .from("trades")
+          .update({ note: trimmedNote })
+          .eq("user_id", userId)
+          .eq("id", record.id)
 
   if (updateError) throw updateError
 
-  const { data, error } = await client
-    .from("trades")
-    .select(TRADE_COLUMNS)
-    .eq("user_id", userId)
-    .eq("id", tradeId)
-    .maybeSingle()
+  const { data, error } =
+    record.recordType === "withdrawal"
+      ? await client
+          .from("balance_transactions")
+          .select(TRANSACTION_COLUMNS)
+          .eq("user_id", userId)
+          .eq("id", record.id)
+          .maybeSingle()
+      : await client
+          .from("trades")
+          .select(TRADE_COLUMNS)
+          .eq("user_id", userId)
+          .eq("id", record.id)
+          .maybeSingle()
 
   if (error) throw error
 
-  return mapTradeFromRow(data)
+  return record.recordType === "withdrawal" ? mapTransactionFromRow(data) : mapTradeFromRow(data)
 }
 
 export async function resetDashboard(userId, startBalance) {
   const client = requireSupabase()
 
-  const [{ error: tradesError }, { error: profileError }] = await Promise.all([
+  const [{ error: tradesError }, { error: transactionsError }, { error: profileError }] = await Promise.all([
     client.from("trades").delete().eq("user_id", userId),
+    client.from("balance_transactions").delete().eq("user_id", userId),
     client.from("profiles").upsert(
       {
         user_id: userId,
@@ -129,6 +186,7 @@ export async function resetDashboard(userId, startBalance) {
   ])
 
   if (tradesError) throw tradesError
+  if (transactionsError) throw transactionsError
   if (profileError) throw profileError
 }
 
@@ -196,7 +254,9 @@ function mapTradeToInsert(userId, trade) {
 function mapTradeFromRow(row) {
   return {
     id: row.id,
+    recordType: "trade",
     size: Number(row.size),
+    amount: Number(row.size),
     entry: Number(row.entry),
     exit: Number(row.exit),
     rawEntry: row.raw_entry ?? "",
@@ -211,6 +271,20 @@ function mapTradeFromRow(row) {
     vwap: row.vwap ?? "",
     note: row.note ?? "",
     result: row.result,
+    balanceImpact: Number(row.pnl),
+    createdAt: row.created_at,
+  }
+}
+
+function mapTransactionFromRow(row) {
+  return {
+    id: row.id,
+    recordType: "withdrawal",
+    amount: Number(row.amount),
+    pnl: 0,
+    balanceImpact: -Number(row.amount),
+    note: row.note ?? "",
+    result: "withdrawal",
     createdAt: row.created_at,
   }
 }

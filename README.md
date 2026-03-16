@@ -83,6 +83,16 @@ create table if not exists public.trades (
 alter table public.trades
 add column if not exists note text;
 
+create table if not exists public.balance_transactions (
+  id bigint primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  amount numeric not null,
+  note text,
+  created_at timestamptz not null default now()
+);
+
+alter table public.balance_transactions enable row level security;
+
 alter table public.profiles enable row level security;
 alter table public.trades enable row level security;
 
@@ -119,6 +129,31 @@ with check (auth.uid() = user_id);
 
 create policy "trades_delete_own"
 on public.trades
+for delete
+to authenticated
+using (auth.uid() = user_id);
+
+create policy "balance_transactions_select_own"
+on public.balance_transactions
+for select
+to authenticated
+using (auth.uid() = user_id);
+
+create policy "balance_transactions_insert_own"
+on public.balance_transactions
+for insert
+to authenticated
+with check (auth.uid() = user_id);
+
+create policy "balance_transactions_update_own"
+on public.balance_transactions
+for update
+to authenticated
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
+
+create policy "balance_transactions_delete_own"
+on public.balance_transactions
 for delete
 to authenticated
 using (auth.uid() = user_id);

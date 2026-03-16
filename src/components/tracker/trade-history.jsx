@@ -50,15 +50,15 @@ export function TradeHistory({ trades, onDelete, onUpdateNote }) {
     }))
   }
 
-  async function handleSaveNote(tradeId) {
+  async function handleSaveNote(trade) {
     setIsSavingNote(true)
 
     try {
-      const savedNote = (noteDrafts[tradeId] ?? "").trim()
-      await onUpdateNote(tradeId, savedNote)
+      const savedNote = (noteDrafts[trade.id] ?? "").trim()
+      await onUpdateNote(trade, savedNote)
       setNoteDrafts((current) => ({
         ...current,
-        [tradeId]: savedNote,
+        [trade.id]: savedNote,
       }))
       setExpandedTradeId(null)
     } finally {
@@ -86,16 +86,16 @@ export function TradeHistory({ trades, onDelete, onUpdateNote }) {
       ],
       ...exportTrades.map((trade) => [
         trade.createdAt ?? "",
-        trade.size,
-        (Number(trade.entry) * 100).toFixed(0),
-        (Number(trade.exit) * 100).toFixed(0),
+        trade.recordType === "withdrawal" ? trade.amount : trade.size,
+        trade.recordType === "withdrawal" ? "" : (Number(trade.entry) * 100).toFixed(0),
+        trade.recordType === "withdrawal" ? "" : (Number(trade.exit) * 100).toFixed(0),
         Number(trade.pnl).toFixed(2),
         trade.time ?? "",
         trade.atr ?? "",
         trade.rsi ?? "",
         trade.macd ?? "",
         trade.vwap ?? "",
-        trade.result,
+        trade.recordType,
         trade.note ?? "",
       ]),
     ]
@@ -190,34 +190,52 @@ export function TradeHistory({ trades, onDelete, onUpdateNote }) {
                     <div className="space-y-2">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="text-lg font-semibold">
-                          {trade.result === "win" ? "WIN" : "LOSS"}
+                          {trade.recordType === "withdrawal"
+                            ? "WITHDRAWAL"
+                            : trade.result === "win"
+                              ? "WIN"
+                              : "LOSS"}
                         </span>
-                        <span className="text-sm text-slate-400">size ${Number(trade.size).toFixed(2)}</span>
                         <span className="text-sm text-slate-400">
-                          shares {Number(trade.shares || 0).toFixed(2)}
+                          {trade.recordType === "withdrawal"
+                            ? `amount $${Number(trade.amount || 0).toFixed(2)}`
+                            : `size $${Number(trade.size).toFixed(2)}`}
                         </span>
+                        {trade.recordType !== "withdrawal" ? (
+                          <span className="text-sm text-slate-400">
+                            shares {Number(trade.shares || 0).toFixed(2)}
+                          </span>
+                        ) : null}
                         {tradeDate ? <PlainBadge label={tradeDate} /> : null}
                       </div>
 
-                      <div className="text-sm text-slate-300 md:text-base">
-                        Entry <span className={getValueClassName(getEntryTone(trade.entry))}>{(Number(trade.entry) * 100).toFixed(0)}¢</span> to Exit{" "}
-                        <span className="text-white">{(Number(trade.exit) * 100).toFixed(0)}¢</span>
-                      </div>
+                      {trade.recordType === "withdrawal" ? (
+                        <div className="text-sm text-slate-300 md:text-base">
+                          Withdrawal from balance history
+                        </div>
+                      ) : (
+                        <>
+                          <div className="text-sm text-slate-300 md:text-base">
+                            Entry <span className={getValueClassName(getEntryTone(trade.entry))}>{(Number(trade.entry) * 100).toFixed(0)}¢</span> to Exit{" "}
+                            <span className="text-white">{(Number(trade.exit) * 100).toFixed(0)}¢</span>
+                          </div>
 
-                      <div className="flex flex-wrap gap-2 pt-1">
-                        <MetricBadge label="ATR" value={trade.atr} tone={getAtrTone(trade.atr)} />
-                        <MetricBadge label="Time" value={trade.time} tone={getTimeTone(trade.time)} />
-                        <MetricBadge
-                          label="Entry"
-                          value={`${(Number(trade.entry) * 100).toFixed(0)}¢`}
-                          tone={getEntryTone(trade.entry)}
-                        />
-                        {trade.rsi ? (
-                          <MetricBadge label="RSI" value={trade.rsi} tone={getRsiTone(trade.rsi)} />
-                        ) : null}
-                        {trade.macd ? <PlainBadge label={`MACD: ${trade.macd}`} /> : null}
-                        {trade.vwap ? <PlainBadge label={`VWAP: ${trade.vwap}`} /> : null}
-                      </div>
+                          <div className="flex flex-wrap gap-2 pt-1">
+                            <MetricBadge label="ATR" value={trade.atr} tone={getAtrTone(trade.atr)} />
+                            <MetricBadge label="Time" value={trade.time} tone={getTimeTone(trade.time)} />
+                            <MetricBadge
+                              label="Entry"
+                              value={`${(Number(trade.entry) * 100).toFixed(0)}¢`}
+                              tone={getEntryTone(trade.entry)}
+                            />
+                            {trade.rsi ? (
+                              <MetricBadge label="RSI" value={trade.rsi} tone={getRsiTone(trade.rsi)} />
+                            ) : null}
+                            {trade.macd ? <PlainBadge label={`MACD: ${trade.macd}`} /> : null}
+                            {trade.vwap ? <PlainBadge label={`VWAP: ${trade.vwap}`} /> : null}
+                          </div>
+                        </>
+                      )}
 
                       <div className="pt-2">
                         <Button
@@ -251,7 +269,7 @@ export function TradeHistory({ trades, onDelete, onUpdateNote }) {
                           />
                           <div className="mt-3 flex gap-2">
                             <Button
-                              onClick={() => handleSaveNote(trade.id)}
+                              onClick={() => handleSaveNote(trade)}
                               disabled={isSavingNote}
                               className="rounded-lg bg-green-600 text-white hover:bg-green-500"
                             >
@@ -273,19 +291,27 @@ export function TradeHistory({ trades, onDelete, onUpdateNote }) {
                       <div className="text-right">
                         <div
                           className={`text-xl font-bold ${
-                            trade.pnl >= 0 ? "text-green-400" : "text-red-400"
+                            trade.recordType === "withdrawal"
+                              ? "text-red-400"
+                              : trade.pnl >= 0
+                                ? "text-green-400"
+                                : "text-red-400"
                           }`}
                         >
-                          {trade.pnl >= 0 ? "+" : ""}${Number(trade.pnl).toFixed(2)}
+                          {trade.recordType === "withdrawal"
+                            ? `-$${Number(trade.amount || 0).toFixed(2)}`
+                            : `${trade.pnl >= 0 ? "+" : ""}$${Number(trade.pnl).toFixed(2)}`}
                         </div>
-                        <div className="mt-1 text-xs text-slate-400">
-                          total ${Number(trade.totalExitValue || 0).toFixed(2)}
-                        </div>
+                        {trade.recordType !== "withdrawal" ? (
+                          <div className="mt-1 text-xs text-slate-400">
+                            total ${Number(trade.totalExitValue || 0).toFixed(2)}
+                          </div>
+                        ) : null}
                       </div>
 
                       <Button
                         variant="outline"
-                        onClick={() => onDelete(trade.id)}
+                        onClick={() => onDelete(trade)}
                         className="rounded-lg border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white hover:bg-slate-700"
                       >
                         Delete
