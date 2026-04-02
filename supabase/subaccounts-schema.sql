@@ -356,6 +356,7 @@ returns table (
   user_id uuid,
   account_id uuid,
   account_name text,
+  account_type text,
   display_name text,
   email text,
   start_balance numeric,
@@ -440,6 +441,7 @@ as $$
     ats.user_id,
     ats.account_id,
     ats.account_name,
+    a.type as account_type,
     coalesce(nullif(trim(p.display_name), ''), null) as display_name,
     ats.email,
     ats.start_balance,
@@ -456,6 +458,7 @@ as $$
     end as win_rate,
     ats.trades_count
   from account_trade_summary ats
+  join public.accounts a on a.id = ats.account_id
   left join public.profiles p on p.user_id = ats.user_id
   left join latest_trade_result ltr
     on ltr.user_id = ats.user_id
@@ -478,6 +481,7 @@ returns table (
   user_id uuid,
   account_id uuid,
   account_name text,
+  account_type text,
   display_name text,
   email text,
   daily_pnl numeric
@@ -497,6 +501,7 @@ as $$
     entry.user_id,
     a.id as account_id,
     a.name as account_name,
+    a.type as account_type,
     coalesce(nullif(trim(p.display_name), ''), null) as display_name,
     u.email::text as email,
     sum(entry.daily_pnl) as daily_pnl

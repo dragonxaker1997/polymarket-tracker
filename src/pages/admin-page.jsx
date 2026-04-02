@@ -49,21 +49,32 @@ export function AdminPage() {
     }
   }, [month])
 
+  const visibleAccountSummaries = useMemo(
+    () => accountSummaries.filter((account) => isVisibleAdminAccount(account)),
+    [accountSummaries]
+  )
+  const visibleCalendarItems = useMemo(
+    () => calendarItems.filter((item) => isVisibleAdminAccount(item)),
+    [calendarItems]
+  )
   const workers = useMemo(() => {
-    if (accountSummaries.length > 0) {
-      return buildWorkerRows(accountSummaries)
+    if (visibleAccountSummaries.length > 0) {
+      return buildWorkerRows(visibleAccountSummaries)
     }
 
-    return buildWorkerRowsFromCalendar(calendarItems)
-  }, [accountSummaries, calendarItems])
+    return buildWorkerRowsFromCalendar(visibleCalendarItems)
+  }, [visibleAccountSummaries, visibleCalendarItems])
   const teamTotalPnl = useMemo(
     () =>
-      accountSummaries.length > 0
+      visibleAccountSummaries.length > 0
         ? workers.reduce((sum, worker) => sum + worker.total_pnl, 0)
-        : calendarItems.reduce((sum, item) => sum + Number(item.daily_pnl ?? 0), 0),
-    [accountSummaries, calendarItems, workers]
+        : visibleCalendarItems.reduce((sum, item) => sum + Number(item.daily_pnl ?? 0), 0),
+    [visibleAccountSummaries, visibleCalendarItems, workers]
   )
-  const calendarDays = useMemo(() => buildCalendarDays(month, calendarItems), [calendarItems, month])
+  const calendarDays = useMemo(
+    () => buildCalendarDays(month, visibleCalendarItems),
+    [month, visibleCalendarItems]
+  )
 
   return (
     <div className="min-h-screen bg-[#020617] p-6 text-white md:p-10">
@@ -370,4 +381,12 @@ function buildWorkerRowsFromCalendar(calendarItems) {
 
       return leftName.localeCompare(rightName)
     })
+}
+
+function isVisibleAdminAccount(record) {
+  if (record.account_type) {
+    return record.account_type !== "main"
+  }
+
+  return (record.account_name ?? "").trim().toLowerCase() !== "main account"
 }
