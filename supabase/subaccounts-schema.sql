@@ -19,7 +19,7 @@ create table if not exists public.accounts (
   name text not null,
   type text not null check (type in ('main', 'wallet', 'custom')),
   sort_order integer not null default 0,
-  start_balance numeric not null default 47,
+  start_balance numeric not null default 0,
   created_at timestamptz not null default now()
 );
 
@@ -47,16 +47,16 @@ begin
   insert into public.accounts (user_id, name, type, sort_order, start_balance)
   values
     (target_user_id, 'Main Account', 'main', 0, 47),
-    (target_user_id, 'Wallet 1', 'wallet', 1, 47),
-    (target_user_id, 'Wallet 2', 'wallet', 2, 47),
-    (target_user_id, 'Wallet 3', 'wallet', 3, 47),
-    (target_user_id, 'Wallet 4', 'wallet', 4, 47),
-    (target_user_id, 'Wallet 5', 'wallet', 5, 47),
-    (target_user_id, 'Wallet 6', 'wallet', 6, 47),
-    (target_user_id, 'Wallet 7', 'wallet', 7, 47),
-    (target_user_id, 'Wallet 8', 'wallet', 8, 47),
-    (target_user_id, 'Wallet 9', 'wallet', 9, 47),
-    (target_user_id, 'Wallet 10', 'wallet', 10, 47);
+    (target_user_id, 'Wallet 1', 'wallet', 1, 0),
+    (target_user_id, 'Wallet 2', 'wallet', 2, 0),
+    (target_user_id, 'Wallet 3', 'wallet', 3, 0),
+    (target_user_id, 'Wallet 4', 'wallet', 4, 0),
+    (target_user_id, 'Wallet 5', 'wallet', 5, 0),
+    (target_user_id, 'Wallet 6', 'wallet', 6, 0),
+    (target_user_id, 'Wallet 7', 'wallet', 7, 0),
+    (target_user_id, 'Wallet 8', 'wallet', 8, 0),
+    (target_user_id, 'Wallet 9', 'wallet', 9, 0),
+    (target_user_id, 'Wallet 10', 'wallet', 10, 0);
 end;
 $$;
 
@@ -104,6 +104,10 @@ begin
   end if;
 end;
 $$;
+
+update public.accounts
+set start_balance = 0
+where type <> 'main';
 
 create table if not exists public.trades (
   id bigint primary key,

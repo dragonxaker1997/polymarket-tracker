@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from "react"
 import { Link } from "react-router-dom"
-import { Layers3, PencilLine, Wallet } from "lucide-react"
+import { PencilLine } from "lucide-react"
 
 import { SummaryCards } from "@/components/tracker/summary-cards"
 import { TradeForm } from "@/components/tracker/trade-form"
@@ -8,7 +8,6 @@ import { TradeHistory } from "@/components/tracker/trade-history"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { isAdminUser } from "@/lib/admin"
-import { cn } from "@/lib/utils"
 import {
   DEFAULT_START_BALANCE,
   buildEquityData,
@@ -227,7 +226,7 @@ export function DashboardPage() {
   }
 
   async function handleAccountNameBlur() {
-    if (!activeAccount || activeAccount.type !== "custom") return
+    if (!activeAccount) return
 
     const trimmedName = accountNameDraft.trim()
 
@@ -325,8 +324,8 @@ export function DashboardPage() {
 
         <Card className="mb-8 overflow-visible border-slate-800 bg-[#0f172a] py-0 text-white ring-0">
           <CardContent className="px-5 pt-5 pb-5 md:px-6 md:pt-6 md:pb-6">
-            <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-              <div className="max-w-2xl">
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px] lg:items-end">
+              <div>
                 <div className="text-sm uppercase tracking-[0.18em] text-slate-500">Accounts</div>
                 <h2 className="mt-2 text-2xl font-semibold">Choose the account you want to work in</h2>
                 <div className="mt-2 text-sm text-slate-400">
@@ -334,53 +333,20 @@ export function DashboardPage() {
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-slate-800 bg-[#020617] px-4 py-3 text-sm text-slate-300">
-                <div className="text-slate-500">Current account</div>
-                <div className="mt-1 font-medium text-white">{activeAccount?.name ?? "No account selected"}</div>
-                <div className="mt-1 text-xs uppercase tracking-[0.16em] text-slate-500">
-                  {formatAccountType(activeAccount?.type)}
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-6 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-              {accounts.map((account) => (
-                <button
-                  key={account.id}
-                  type="button"
-                  onClick={() => setActiveAccountId(account.id)}
-                  className={cn(
-                    "rounded-2xl border px-4 py-4 text-left transition-all",
-                    account.id === activeAccountId
-                      ? "border-sky-400 bg-sky-500/10 shadow-[0_0_0_1px_rgba(56,189,248,0.35)]"
-                      : "border-slate-800 bg-[#020617] hover:border-slate-600 hover:bg-slate-950"
-                  )}
+              <div>
+                <div className="mb-2 text-sm text-slate-400">Wallet selector</div>
+                <select
+                  value={activeAccountId}
+                  onChange={(event) => setActiveAccountId(event.target.value)}
+                  className="w-full rounded-xl border border-slate-800 bg-[#020617] px-3 py-3 outline-none focus:border-slate-600"
                 >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="font-medium text-white">{account.name}</div>
-                      <div className="mt-1 text-xs text-slate-500">
-                        {formatAccountType(account.type)}
-                      </div>
-                    </div>
-                    <div
-                      className={cn(
-                        "rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.18em]",
-                        account.id === activeAccountId
-                          ? "bg-sky-400/20 text-sky-200"
-                          : "bg-slate-800 text-slate-400"
-                      )}
-                    >
-                      {account.id === activeAccountId ? "Active" : "Open"}
-                    </div>
-                  </div>
-
-                  <div className="mt-4 flex items-center justify-between text-sm">
-                    <div className="text-slate-500">Start balance</div>
-                    <div className="font-semibold text-slate-200">${account.startBalance.toFixed(2)}</div>
-                  </div>
-                </button>
-              ))}
+                  {accounts.map((account) => (
+                    <option key={account.id} value={account.id}>
+                      {account.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -428,17 +394,13 @@ export function DashboardPage() {
                     onChange={(event) => setAccountNameDraft(event.target.value)}
                     onBlur={handleAccountNameBlur}
                     placeholder="Account name"
-                    disabled={!activeAccount || activeAccount.type !== "custom" || isSavingAccountName}
+                    disabled={!activeAccount || isSavingAccountName}
                   />
                   <PencilLine className="pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2 text-slate-500" />
                 </div>
               </div>
               <div className="mb-4 text-xs text-slate-500">
-                {activeAccount?.type === "custom"
-                  ? isSavingAccountName
-                    ? "Saving account name..."
-                    : "Custom account names can be edited."
-                  : "Main Account and Wallet 1-10 keep stable default names."}
+                {isSavingAccountName ? "Saving account name..." : "You can rename any account here if needed."}
               </div>
 
               <div className="mb-2 text-sm text-slate-400">Add custom account</div>

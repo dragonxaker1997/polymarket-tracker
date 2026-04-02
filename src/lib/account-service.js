@@ -44,7 +44,7 @@ export async function ensureDefaultAccounts(userId) {
       name: `Wallet ${index + 1}`,
       type: "wallet",
       sort_order: index + 1,
-      start_balance: DEFAULT_START_BALANCE,
+      start_balance: 0,
     })),
   ]
 
@@ -78,7 +78,7 @@ export async function createCustomAccount(userId, name, sortOrder) {
       name: name.trim(),
       type: "custom",
       sort_order: sortOrder,
-      start_balance: DEFAULT_START_BALANCE,
+      start_balance: 0,
     })
     .select(ACCOUNT_COLUMNS)
     .single()
