@@ -198,7 +198,7 @@ export function AdminPage() {
                       <div className="text-xs text-slate-500">No activity</div>
                     ) : (
                       day.items.map((item) => (
-                        <div key={`${day.date}-${item.user_id}-${item.account_name}`} className="rounded-lg border border-slate-800 bg-slate-950 p-2">
+                        <div key={`${day.date}-${item.user_id}-${item.account_id}`} className="rounded-lg border border-slate-800 bg-slate-950 p-2">
                           <div className="truncate text-xs text-slate-200">
                             {item.account_name}
                           </div>

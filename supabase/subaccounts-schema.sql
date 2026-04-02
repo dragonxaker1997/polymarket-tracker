@@ -474,6 +474,7 @@ create or replace function public.get_team_daily_pnl(date_from date, date_to dat
 returns table (
   trade_date date,
   user_id uuid,
+  account_id uuid,
   account_name text,
   display_name text,
   email text,
@@ -492,6 +493,7 @@ as $$
   select
     (t.created_at at time zone 'UTC')::date as trade_date,
     t.user_id,
+    a.id as account_id,
     a.name as account_name,
     coalesce(nullif(trim(p.display_name), ''), null) as display_name,
     u.email::text as email,
@@ -502,8 +504,8 @@ as $$
   left join public.profiles p on p.user_id = t.user_id
   where exists (select 1 from admin_check)
     and (t.created_at at time zone 'UTC')::date between date_from and date_to
-  group by (t.created_at at time zone 'UTC')::date, t.user_id, a.name, p.display_name, u.email
-  order by trade_date, email, account_name;
+  group by (t.created_at at time zone 'UTC')::date, t.user_id, a.id, a.name, p.display_name, u.email
+  order by trade_date, email, account_name, account_id;
 $$;
 
 revoke all on function public.get_team_daily_pnl(date, date) from public;

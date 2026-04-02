@@ -41,13 +41,11 @@ export function DashboardPage() {
     activeAccountId,
     isLoading: isAccountsLoading,
     setActiveAccountId,
-    addCustomAccount,
     saveAccountUpdates,
   } = useAccount()
   const [records, setRecords] = useState([])
   const [startBalance, setStartBalance] = useState(DEFAULT_START_BALANCE)
   const [displayName, setDisplayName] = useState("")
-  const [newAccountName, setNewAccountName] = useState("")
   const [accountNameDraft, setAccountNameDraft] = useState("")
   const [isBootstrapping, setIsBootstrapping] = useState(true)
   const [isSavingProfile, setIsSavingProfile] = useState(false)
@@ -214,18 +212,6 @@ export function DashboardPage() {
         subtitle="Fetching private data for the current account."
       />
     )
-  }
-
-  async function handleCreateAccount() {
-    if (!newAccountName.trim()) return
-
-    try {
-      setError("")
-      await addCustomAccount(newAccountName)
-      setNewAccountName("")
-    } catch (nextError) {
-      setError(nextError.message ?? "Failed to create account.")
-    }
   }
 
   async function handleAccountNameBlur() {
@@ -404,22 +390,6 @@ export function DashboardPage() {
               </div>
               <div className="mb-4 text-xs text-slate-500">
                 {isSavingAccountName ? "Saving account name..." : "You can rename any account here if needed."}
-              </div>
-
-              <div className="mb-2 text-sm text-slate-400">Add custom account</div>
-              <div className="mb-4 flex gap-3">
-                <input
-                  className="w-full rounded-xl border border-slate-800 bg-[#020617] px-3 py-2.5 outline-none focus:border-slate-600"
-                  value={newAccountName}
-                  onChange={(event) => setNewAccountName(event.target.value)}
-                  placeholder="Custom account name"
-                />
-                <Button
-                  onClick={handleCreateAccount}
-                  className="rounded-xl bg-slate-100 text-slate-950 hover:bg-white"
-                >
-                  Add
-                </Button>
               </div>
 
               <div className="mb-2 text-sm text-slate-400">Worker name</div>

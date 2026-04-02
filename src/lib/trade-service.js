@@ -233,6 +233,7 @@ export async function loadTeamDailyPnl(dateFrom, dateTo) {
   return (data ?? []).map((row) => ({
     trade_date: row.trade_date,
     user_id: row.user_id,
+    account_id: row.account_id,
     account_name: row.account_name ?? "",
     display_name: row.display_name ?? "",
     email: row.email,
