@@ -341,6 +341,7 @@ function buildWorkerRowsFromCalendar(calendarItems) {
       trades_count: 0,
       accounts_count: 0,
       weighted_wins: 0,
+      win_rate: 0,
       streak_count: 0,
       streak_label: "-",
       seenAccounts: new Set(),
