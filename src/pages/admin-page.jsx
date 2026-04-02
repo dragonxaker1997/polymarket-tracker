@@ -49,10 +49,19 @@ export function AdminPage() {
     }
   }, [month])
 
-  const workers = useMemo(() => buildWorkerRows(accountSummaries), [accountSummaries])
+  const workers = useMemo(() => {
+    if (accountSummaries.length > 0) {
+      return buildWorkerRows(accountSummaries)
+    }
+
+    return buildWorkerRowsFromCalendar(calendarItems)
+  }, [accountSummaries, calendarItems])
   const teamTotalPnl = useMemo(
-    () => workers.reduce((sum, worker) => sum + worker.total_pnl, 0),
-    [workers]
+    () =>
+      accountSummaries.length > 0
+        ? workers.reduce((sum, worker) => sum + worker.total_pnl, 0)
+        : calendarItems.reduce((sum, item) => sum + Number(item.daily_pnl ?? 0), 0),
+    [accountSummaries, calendarItems, workers]
   )
   const calendarDays = useMemo(() => buildCalendarDays(month, calendarItems), [calendarItems, month])
 
@@ -311,6 +320,49 @@ function buildWorkerRows(accountSummaries) {
       win_rate:
         worker.trades_count > 0 ? (worker.weighted_wins / worker.trades_count) * 100 : 0,
     }))
+    .sort((left, right) => {
+      const leftName = (left.display_name || left.email || "").toLowerCase()
+      const rightName = (right.display_name || right.email || "").toLowerCase()
+
+      return leftName.localeCompare(rightName)
+    })
+}
+
+function buildWorkerRowsFromCalendar(calendarItems) {
+  const workers = new Map()
+
+  for (const item of calendarItems) {
+    const existing = workers.get(item.user_id) ?? {
+      user_id: item.user_id,
+      display_name: item.display_name ?? "",
+      email: item.email ?? "",
+      start_balance: 0,
+      total_pnl: 0,
+      trades_count: 0,
+      accounts_count: 0,
+      weighted_wins: 0,
+      streak_count: 0,
+      streak_label: "-",
+      seenAccounts: new Set(),
+    }
+
+    existing.display_name = existing.display_name || item.display_name || ""
+    existing.email = existing.email || item.email || ""
+    existing.total_pnl += Number(item.daily_pnl ?? 0)
+
+    if (item.account_id && !existing.seenAccounts.has(item.account_id)) {
+      existing.seenAccounts.add(item.account_id)
+      existing.accounts_count += 1
+    }
+
+    workers.set(item.user_id, existing)
+  }
+
+  return Array.from(workers.values())
+    .map((worker) => {
+      delete worker.seenAccounts
+      return worker
+    })
     .sort((left, right) => {
       const leftName = (left.display_name || left.email || "").toLowerCase()
       const rightName = (right.display_name || right.email || "").toLowerCase()
