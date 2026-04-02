@@ -29,6 +29,48 @@ on public.accounts (user_id, lower(name));
 create index if not exists accounts_user_id_sort_order_idx
 on public.accounts (user_id, sort_order, created_at);
 
+create table if not exists public.trades (
+  id bigint primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  account_id uuid references public.accounts(id) on delete cascade,
+  size numeric not null,
+  entry numeric not null,
+  exit numeric not null,
+  raw_entry text,
+  raw_exit text,
+  shares numeric not null,
+  total_exit_value numeric not null,
+  pnl numeric not null,
+  time text,
+  atr text,
+  rsi text,
+  macd text,
+  note text,
+  result text not null,
+  created_at timestamptz not null default now()
+);
+
+alter table public.trades
+add column if not exists account_id uuid references public.accounts(id) on delete cascade;
+
+alter table public.trades
+add column if not exists note text;
+
+alter table public.trades
+drop column if exists vwap;
+
+create table if not exists public.balance_transactions (
+  id bigint primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  account_id uuid references public.accounts(id) on delete cascade,
+  amount numeric not null,
+  note text,
+  created_at timestamptz not null default now()
+);
+
+alter table public.balance_transactions
+add column if not exists account_id uuid references public.accounts(id) on delete cascade;
+
 create or replace function public.ensure_default_accounts(target_user_id uuid)
 returns void
 language plpgsql
@@ -36,14 +78,6 @@ security definer
 set search_path = public
 as $$
 begin
-  if exists (
-    select 1
-    from public.accounts a
-    where a.user_id = target_user_id
-  ) then
-    return;
-  end if;
-
   insert into public.accounts (user_id, name, type, sort_order, start_balance)
   values
     (target_user_id, 'Main Account', 'main', 0, 47),
@@ -56,7 +90,18 @@ begin
     (target_user_id, 'Wallet 7', 'wallet', 7, 0),
     (target_user_id, 'Wallet 8', 'wallet', 8, 0),
     (target_user_id, 'Wallet 9', 'wallet', 9, 0),
-    (target_user_id, 'Wallet 10', 'wallet', 10, 0);
+    (target_user_id, 'Wallet 10', 'wallet', 10, 0)
+  on conflict (user_id, lower(name)) do nothing;
+
+  update public.accounts
+  set type = 'main', sort_order = 0, start_balance = 47
+  where user_id = target_user_id
+    and lower(name) = lower('Main Account');
+
+  update public.accounts
+  set start_balance = 0
+  where user_id = target_user_id
+    and type <> 'main';
 end;
 $$;
 
@@ -97,10 +142,9 @@ begin
       and column_name = 'start_balance'
   ) then
     update public.accounts a
-    set start_balance = p.start_balance
+    set start_balance = case when a.type = 'main' then coalesce(p.start_balance, 47) else 0 end
     from public.profiles p
-    where a.user_id = p.user_id
-      and a.type = 'main';
+    where a.user_id = p.user_id;
   end if;
 end;
 $$;
@@ -108,46 +152,6 @@ $$;
 update public.accounts
 set start_balance = 0
 where type <> 'main';
-
-create table if not exists public.trades (
-  id bigint primary key,
-  user_id uuid not null references auth.users(id) on delete cascade,
-  size numeric not null,
-  entry numeric not null,
-  exit numeric not null,
-  raw_entry text,
-  raw_exit text,
-  shares numeric not null,
-  total_exit_value numeric not null,
-  pnl numeric not null,
-  time text,
-  atr text,
-  rsi text,
-  macd text,
-  note text,
-  result text not null,
-  created_at timestamptz not null default now()
-);
-
-alter table public.trades
-add column if not exists note text;
-
-alter table public.trades
-add column if not exists account_id uuid;
-
-alter table public.trades
-drop column if exists vwap;
-
-create table if not exists public.balance_transactions (
-  id bigint primary key,
-  user_id uuid not null references auth.users(id) on delete cascade,
-  amount numeric not null,
-  note text,
-  created_at timestamptz not null default now()
-);
-
-alter table public.balance_transactions
-add column if not exists account_id uuid;
 
 update public.trades t
 set account_id = a.id
@@ -163,34 +167,6 @@ where bt.account_id is null
   and a.user_id = bt.user_id
   and a.type = 'main';
 
-do $$
-begin
-  if not exists (
-    select 1
-    from pg_constraint
-    where conname = 'trades_account_id_fkey'
-  ) then
-    alter table public.trades
-    add constraint trades_account_id_fkey
-    foreign key (account_id) references public.accounts(id) on delete cascade;
-  end if;
-end;
-$$;
-
-do $$
-begin
-  if not exists (
-    select 1
-    from pg_constraint
-    where conname = 'balance_transactions_account_id_fkey'
-  ) then
-    alter table public.balance_transactions
-    add constraint balance_transactions_account_id_fkey
-    foreign key (account_id) references public.accounts(id) on delete cascade;
-  end if;
-end;
-$$;
-
 alter table public.trades
 alter column account_id set not null;
 
@@ -202,6 +178,21 @@ on public.trades (user_id, account_id, created_at desc);
 
 create index if not exists balance_transactions_user_id_account_id_created_at_idx
 on public.balance_transactions (user_id, account_id, created_at desc);
+
+do $$
+begin
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'profiles'
+      and column_name = 'start_balance'
+  ) then
+    alter table public.profiles
+    drop column start_balance;
+  end if;
+end;
+$$;
 
 alter table public.profiles enable row level security;
 alter table public.accounts enable row level security;
@@ -349,22 +340,8 @@ for delete
 to authenticated
 using (auth.uid() = user_id);
 
-do $$
-begin
-  if exists (
-    select 1
-    from information_schema.columns
-    where table_schema = 'public'
-      and table_name = 'profiles'
-      and column_name = 'start_balance'
-  ) then
-    alter table public.profiles
-    drop column start_balance;
-  end if;
-end;
-$$;
-
 drop function if exists public.get_worker_summaries();
+drop function if exists public.get_account_summaries();
 
 create or replace function public.get_account_summaries()
 returns table (
@@ -390,41 +367,7 @@ as $$
     where id = auth.uid()
       and lower(email) = lower('YOUR_ADMIN_EMAIL')
   ),
-  ranked_trades as (
-    select
-      t.*,
-      first_value(t.result) over (
-        partition by t.user_id, t.account_id
-        order by t.created_at desc, t.id desc
-      ) as latest_result
-    from public.trades t
-  ),
-  streak_groups as (
-    select
-      rt.*,
-      sum(
-        case
-          when rt.result = rt.latest_result then 0
-          else 1
-        end
-      ) over (
-        partition by rt.user_id, rt.account_id
-        order by rt.created_at desc, rt.id desc
-        rows between unbounded preceding and current row
-      ) as mismatch_group
-    from ranked_trades rt
-  ),
-  streaks as (
-    select
-      user_id,
-      account_id,
-      count(*)::integer as streak_count,
-      max(latest_result)::text as streak_label
-    from streak_groups
-    where mismatch_group = 0
-    group by user_id, account_id
-  ),
-  summary as (
+  account_trade_summary as (
     select
       a.user_id,
       a.id as account_id,
@@ -438,31 +381,67 @@ as $$
     join auth.users u on u.id = a.user_id
     left join public.trades t on t.account_id = a.id
     group by a.user_id, a.id, a.name, a.start_balance, u.email
+  ),
+  latest_trade_result as (
+    select distinct on (t.user_id, t.account_id)
+      t.user_id,
+      t.account_id,
+      t.result
+    from public.trades t
+    order by t.user_id, t.account_id, t.created_at desc, t.id desc
+  ),
+  streaks as (
+    select
+      x.user_id,
+      x.account_id,
+      count(*)::integer as streak_count
+    from public.trades x
+    join latest_trade_result ltr
+      on ltr.user_id = x.user_id
+     and ltr.account_id = x.account_id
+     and ltr.result = x.result
+    where not exists (
+      select 1
+      from public.trades newer
+      where newer.user_id = x.user_id
+        and newer.account_id = x.account_id
+        and (
+          newer.created_at > x.created_at
+          or (newer.created_at = x.created_at and newer.id > x.id)
+        )
+        and newer.result <> ltr.result
+    )
+    group by x.user_id, x.account_id
   )
   select
-    s.user_id,
-    s.account_id,
-    s.account_name,
+    ats.user_id,
+    ats.account_id,
+    ats.account_name,
     coalesce(nullif(trim(p.display_name), ''), null) as display_name,
-    s.email,
-    s.start_balance,
-    s.total_pnl,
-    coalesce(st.streak_count, 0) as streak_count,
+    ats.email,
+    ats.start_balance,
+    ats.total_pnl,
+    coalesce(s.streak_count, 0) as streak_count,
     case
-      when coalesce(st.streak_label, '-') = 'win' then 'W'
-      when coalesce(st.streak_label, '-') = 'loss' then 'L'
+      when ltr.result = 'win' then 'W'
+      when ltr.result = 'loss' then 'L'
       else '-'
     end as streak_label,
     case
-      when s.trades_count = 0 then 0
-      else (s.wins::numeric / s.trades_count::numeric) * 100
+      when ats.trades_count = 0 then 0
+      else (ats.wins::numeric / ats.trades_count::numeric) * 100
     end as win_rate,
-    s.trades_count
-  from summary s
-  left join public.profiles p on p.user_id = s.user_id
-  left join streaks st on st.user_id = s.user_id and st.account_id = s.account_id
+    ats.trades_count
+  from account_trade_summary ats
+  left join public.profiles p on p.user_id = ats.user_id
+  left join latest_trade_result ltr
+    on ltr.user_id = ats.user_id
+   and ltr.account_id = ats.account_id
+  left join streaks s
+    on s.user_id = ats.user_id
+   and s.account_id = ats.account_id
   where exists (select 1 from admin_check)
-  order by s.email, s.account_name;
+  order by ats.email, ats.account_name, ats.account_id;
 $$;
 
 revoke all on function public.get_account_summaries() from public;
