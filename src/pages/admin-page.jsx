@@ -8,7 +8,7 @@ import { useAuth } from "@/providers/use-auth"
 
 export function AdminPage() {
   const { user, signOut } = useAuth()
-  const [workers, setWorkers] = useState([])
+  const [accountSummaries, setAccountSummaries] = useState([])
   const [calendarItems, setCalendarItems] = useState([])
   const [month, setMonth] = useState(getCurrentMonthValue())
   const [isLoading, setIsLoading] = useState(true)
@@ -30,7 +30,7 @@ export function AdminPage() {
         ])
 
         if (!active) return
-        setWorkers(summaries)
+        setAccountSummaries(summaries)
         setCalendarItems(dailyItems)
       } catch (nextError) {
         if (!active) return
@@ -49,6 +49,7 @@ export function AdminPage() {
     }
   }, [month])
 
+  const workers = useMemo(() => buildWorkerRows(accountSummaries), [accountSummaries])
   const teamTotalPnl = useMemo(
     () => workers.reduce((sum, worker) => sum + worker.total_pnl, 0),
     [workers]
@@ -154,11 +155,14 @@ export function AdminPage() {
                   </thead>
                   <tbody>
                     {workers.map((worker) => (
-                      <tr key={worker.account_id} className="border-b border-slate-900/80">
+                      <tr key={worker.user_id} className="border-b border-slate-900/80">
                         <td className="px-6 py-4">
-                          <div className="font-medium text-white">{worker.account_name}</div>
+                          <div className="font-medium text-white">{worker.display_name || worker.email}</div>
                           <div className="mt-1 text-xs text-slate-500">
-                            {(worker.display_name || worker.email)}
+                            {worker.email}
+                          </div>
+                          <div className="mt-1 text-[11px] uppercase tracking-[0.16em] text-slate-600">
+                            {worker.accounts_count} accounts
                           </div>
                         </td>
                         <td className="px-6 py-4 text-slate-300">${worker.start_balance.toFixed(2)}</td>
@@ -265,4 +269,52 @@ function shiftMonth(monthValue, offset) {
   const date = new Date(year, month - 1 + offset, 1)
 
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`
+}
+
+function buildWorkerRows(accountSummaries) {
+  const workers = new Map()
+
+  for (const account of accountSummaries) {
+    const existing = workers.get(account.user_id) ?? {
+      user_id: account.user_id,
+      display_name: account.display_name ?? "",
+      email: account.email ?? "",
+      start_balance: 0,
+      total_pnl: 0,
+      trades_count: 0,
+      accounts_count: 0,
+      weighted_wins: 0,
+      streak_count: 0,
+      streak_label: "-",
+    }
+
+    existing.display_name = existing.display_name || account.display_name || ""
+    existing.email = existing.email || account.email || ""
+    existing.start_balance += Number(account.start_balance ?? 0)
+    existing.total_pnl += Number(account.total_pnl ?? 0)
+    existing.trades_count += Number(account.trades_count ?? 0)
+    existing.accounts_count += 1
+    existing.weighted_wins +=
+      (Number(account.win_rate ?? 0) / 100) * Number(account.trades_count ?? 0)
+
+    if (Number(account.streak_count ?? 0) > existing.streak_count) {
+      existing.streak_count = Number(account.streak_count ?? 0)
+      existing.streak_label = account.streak_label ?? "-"
+    }
+
+    workers.set(account.user_id, existing)
+  }
+
+  return Array.from(workers.values())
+    .map((worker) => ({
+      ...worker,
+      win_rate:
+        worker.trades_count > 0 ? (worker.weighted_wins / worker.trades_count) * 100 : 0,
+    }))
+    .sort((left, right) => {
+      const leftName = (left.display_name || left.email || "").toLowerCase()
+      const rightName = (right.display_name || right.email || "").toLowerCase()
+
+      return leftName.localeCompare(rightName)
+    })
 }
