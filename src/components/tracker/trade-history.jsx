@@ -80,7 +80,6 @@ export function TradeHistory({ trades, onDelete, onUpdateNote }) {
         "atr",
         "rsi",
         "macd",
-        "vwap",
         "result",
         "note",
       ],
@@ -94,7 +93,6 @@ export function TradeHistory({ trades, onDelete, onUpdateNote }) {
         trade.atr ?? "",
         trade.rsi ?? "",
         trade.macd ?? "",
-        trade.vwap ?? "",
         trade.recordType,
         trade.note ?? "",
       ]),
@@ -232,7 +230,6 @@ export function TradeHistory({ trades, onDelete, onUpdateNote }) {
                               <MetricBadge label="RSI" value={trade.rsi} tone={getRsiTone(trade.rsi)} />
                             ) : null}
                             {trade.macd ? <PlainBadge label={`MACD: ${trade.macd}`} /> : null}
-                            {trade.vwap ? <PlainBadge label={`VWAP: ${trade.vwap}`} /> : null}
                           </div>
                         </>
                       )}

@@ -25,7 +25,6 @@ const TRADE_COLUMNS = [
   "atr",
   "rsi",
   "macd",
-  "vwap",
   "note",
   "result",
   "created_at",
@@ -258,7 +257,6 @@ function mapTradeToInsert(userId, accountId, trade) {
     atr: trade.atr || null,
     rsi: trade.rsi || null,
     macd: trade.macd || null,
-    vwap: trade.vwap || null,
     note: trade.note || null,
     result: trade.result,
   }
@@ -282,7 +280,6 @@ function mapTradeFromRow(row) {
     atr: row.atr ?? "",
     rsi: row.rsi ?? "",
     macd: row.macd ?? "",
-    vwap: row.vwap ?? "",
     note: row.note ?? "",
     result: row.result,
     balanceImpact: Number(row.pnl),

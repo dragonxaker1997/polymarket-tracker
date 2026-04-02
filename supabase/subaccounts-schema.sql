@@ -124,7 +124,6 @@ create table if not exists public.trades (
   atr text,
   rsi text,
   macd text,
-  vwap text,
   note text,
   result text not null,
   created_at timestamptz not null default now()
@@ -135,6 +134,9 @@ add column if not exists note text;
 
 alter table public.trades
 add column if not exists account_id uuid;
+
+alter table public.trades
+drop column if exists vwap;
 
 create table if not exists public.balance_transactions (
   id bigint primary key,

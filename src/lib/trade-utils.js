@@ -41,7 +41,6 @@ export function createTrade(form) {
     atr: form.atr,
     rsi: form.rsi,
     macd: form.macd,
-    vwap: form.vwap,
     note: form.note ?? "",
     result: pnl >= 0 ? "win" : "loss",
     balanceImpact: pnl,
@@ -81,6 +80,11 @@ export function getTradePreview(size, entry, exit) {
 
 export function getTradeStats(trades, startBalance) {
   const tradeRecords = trades.filter((trade) => trade.recordType !== "withdrawal")
+  const transactionsCount = tradeRecords.length * 2
+  const volume = tradeRecords.reduce(
+    (sum, trade) => sum + Number(trade.size ?? 0) + Number(trade.totalExitValue ?? 0),
+    0
+  )
   const totalPnL = tradeRecords.reduce((sum, trade) => sum + (Number(trade.pnl) || 0), 0)
   const totalBalanceImpact = trades.reduce(
     (sum, trade) => sum + Number(trade.balanceImpact ?? trade.pnl ?? 0),
@@ -114,6 +118,9 @@ export function getTradeStats(trades, startBalance) {
     wins,
     winRate,
     dailyPnL,
+    tradeRecordsCount: tradeRecords.length,
+    transactionsCount,
+    volume,
     streak,
     streakLabel,
     showBreakWarning: streakLabel === "L" && streak >= 5,

@@ -108,6 +108,9 @@ export function DashboardPage() {
     balance,
     wins,
     winRate,
+    tradeRecordsCount,
+    transactionsCount,
+    volume,
     streak,
     streakLabel,
     showBreakWarning,
@@ -490,7 +493,9 @@ export function DashboardPage() {
             startBalance={startBalance}
             totalPnL={totalPnL}
             dailyPnL={dailyPnL}
-            tradesCount={records.filter((record) => record.recordType !== "withdrawal").length}
+            tradesCount={tradeRecordsCount}
+            transactionsCount={transactionsCount}
+            volume={volume}
             streak={streak}
             streakLabel={streakLabel}
             winRate={winRate}

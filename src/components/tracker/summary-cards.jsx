@@ -6,6 +6,8 @@ export function SummaryCards({
   totalPnL,
   dailyPnL,
   tradesCount,
+  transactionsCount,
+  volume,
   streak,
   streakLabel,
   winRate,
@@ -31,6 +33,18 @@ export function SummaryCards({
       valueClassName: dailyPnL >= 0 ? "text-green-400" : "text-red-400",
     },
     {
+      label: "Transactions",
+      value: String(transactionsCount),
+      sub: `${tradesCount} journal records`,
+      valueClassName: "text-white",
+    },
+    {
+      label: "Volume",
+      value: `$${volume.toFixed(2)}`,
+      sub: "buy + sell turnover",
+      valueClassName: "text-white",
+    },
+    {
       label: "Streak",
       value: `${streak}${streakLabel}`,
       sub: "current series",
@@ -45,7 +59,7 @@ export function SummaryCards({
   ]
 
   return (
-    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-7">
       {cards.map((card) => (
         <Card key={card.label} className="border-slate-800 bg-[#0f172a] py-0 text-white ring-0">
           <CardHeader className="gap-2 px-5 pt-5 pb-0">

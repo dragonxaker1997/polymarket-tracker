@@ -13,7 +13,6 @@ const EMPTY_FORM = {
   atr: "",
   rsi: "",
   macd: "",
-  vwap: "",
 }
 
 const FIELDS = [
@@ -24,13 +23,11 @@ const FIELDS = [
   ["atr", "ATR"],
   ["rsi", "RSI"],
   ["macd", "MACD"],
-  ["vwap", "VWAP"],
 ]
 
 const CHECKLIST_ROWS = [
   ["RSI", "> 55", "< 45"],
   ["MACD", "Histogram green", "Histogram red"],
-  ["VWAP", "BTC above VWAP", "BTC below VWAP"],
   ["EMA", "EMA 9 > EMA 21", "EMA 9 < EMA 21"],
   ["HL10", "Break HL10 High", "Break HL10 Low"],
 ]
