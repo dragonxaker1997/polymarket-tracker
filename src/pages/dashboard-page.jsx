@@ -11,11 +11,13 @@ import { isAdminUser } from "@/lib/admin"
 import {
   DEFAULT_START_BALANCE,
   buildEquityData,
+  createAdjustment,
   createTrade,
   createWithdrawal,
   getTradeStats,
 } from "@/lib/trade-utils"
 import {
+  insertAdjustment,
   insertWithdrawal,
   insertTrade,
   loadDashboard,
@@ -146,6 +148,21 @@ export function DashboardPage() {
       return true
     } catch (nextError) {
       setError(nextError.message ?? "Failed to save withdrawal.")
+      return false
+    }
+  }
+
+  async function handleAddAdjustment(amount, note) {
+    const adjustment = createAdjustment(amount, note)
+    if (!adjustment) return false
+
+    try {
+      setError("")
+      const savedAdjustment = await insertAdjustment(user.id, activeAccountId, adjustment)
+      setRecords((current) => [savedAdjustment, ...current])
+      return true
+    } catch (nextError) {
+      setError(nextError.message ?? "Failed to save adjustment.")
       return false
     }
   }
@@ -483,6 +500,7 @@ export function DashboardPage() {
           <TradeForm
             onSubmit={handleAddTrade}
             onAddWithdrawal={handleAddWithdrawal}
+            onAddAdjustment={handleAddAdjustment}
             currentBalance={balance}
             requireDangerConfirm={showBreakWarning}
           />

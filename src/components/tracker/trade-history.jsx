@@ -85,9 +85,9 @@ export function TradeHistory({ trades, onDelete, onUpdateNote }) {
       ],
       ...exportTrades.map((trade) => [
         trade.createdAt ?? "",
-        trade.recordType === "withdrawal" ? trade.amount : trade.size,
-        trade.recordType === "withdrawal" ? "" : (Number(trade.entry) * 100).toFixed(0),
-        trade.recordType === "withdrawal" ? "" : (Number(trade.exit) * 100).toFixed(0),
+        trade.recordType === "trade" ? trade.size : trade.amount,
+        trade.recordType === "trade" ? (Number(trade.entry) * 100).toFixed(0) : "",
+        trade.recordType === "trade" ? (Number(trade.exit) * 100).toFixed(0) : "",
         Number(trade.pnl).toFixed(2),
         trade.time ?? "",
         trade.atr ?? "",
@@ -190,16 +190,18 @@ export function TradeHistory({ trades, onDelete, onUpdateNote }) {
                         <span className="text-lg font-semibold">
                           {trade.recordType === "withdrawal"
                             ? "WITHDRAWAL"
+                            : trade.recordType === "adjustment"
+                              ? "ADJUSTMENT"
                             : trade.result === "win"
                               ? "WIN"
                               : "LOSS"}
                         </span>
                         <span className="text-sm text-slate-400">
-                          {trade.recordType === "withdrawal"
+                          {trade.recordType === "withdrawal" || trade.recordType === "adjustment"
                             ? `amount $${Number(trade.amount || 0).toFixed(2)}`
                             : `size $${Number(trade.size).toFixed(2)}`}
                         </span>
-                        {trade.recordType !== "withdrawal" ? (
+                        {trade.recordType === "trade" ? (
                           <span className="text-sm text-slate-400">
                             shares {Number(trade.shares || 0).toFixed(2)}
                           </span>
@@ -210,6 +212,10 @@ export function TradeHistory({ trades, onDelete, onUpdateNote }) {
                       {trade.recordType === "withdrawal" ? (
                         <div className="text-sm text-slate-300 md:text-base">
                           Withdrawal from balance history
+                        </div>
+                      ) : trade.recordType === "adjustment" ? (
+                        <div className="text-sm text-slate-300 md:text-base">
+                          Manual balance adjustment
                         </div>
                       ) : (
                         <>
@@ -299,7 +305,7 @@ export function TradeHistory({ trades, onDelete, onUpdateNote }) {
                             ? `-$${Number(trade.amount || 0).toFixed(2)}`
                             : `${trade.pnl >= 0 ? "+" : ""}$${Number(trade.pnl).toFixed(2)}`}
                         </div>
-                        {trade.recordType !== "withdrawal" ? (
+                        {trade.recordType === "trade" ? (
                           <div className="mt-1 text-xs text-slate-400">
                             total ${Number(trade.totalExitValue || 0).toFixed(2)}
                           </div>

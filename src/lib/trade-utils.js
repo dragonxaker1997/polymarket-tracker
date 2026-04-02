@@ -63,6 +63,22 @@ export function createWithdrawal(amount, note = "") {
   }
 }
 
+export function createAdjustment(amount, note = "") {
+  const numericAmount = Number(amount)
+
+  if (!Number.isFinite(numericAmount) || numericAmount === 0) return null
+
+  return {
+    id: Date.now(),
+    recordType: "adjustment",
+    amount: numericAmount,
+    pnl: numericAmount,
+    balanceImpact: numericAmount,
+    note,
+    result: "adjustment",
+  }
+}
+
 export function getTradePreview(size, entry, exit) {
   const previewSize = Number(size) || 0
   const previewEntry = normalizePrice(entry)
@@ -79,13 +95,16 @@ export function getTradePreview(size, entry, exit) {
 }
 
 export function getTradeStats(trades, startBalance) {
-  const tradeRecords = trades.filter((trade) => trade.recordType !== "withdrawal")
+  const tradeRecords = trades.filter((trade) => trade.recordType === "trade")
+  const pnlRecords = trades.filter(
+    (trade) => trade.recordType === "trade" || trade.recordType === "adjustment"
+  )
   const transactionsCount = tradeRecords.length * 2
   const volume = tradeRecords.reduce(
     (sum, trade) => sum + Number(trade.size ?? 0) + Number(trade.totalExitValue ?? 0),
     0
   )
-  const totalPnL = tradeRecords.reduce((sum, trade) => sum + (Number(trade.pnl) || 0), 0)
+  const totalPnL = pnlRecords.reduce((sum, trade) => sum + (Number(trade.pnl) || 0), 0)
   const totalBalanceImpact = trades.reduce(
     (sum, trade) => sum + Number(trade.balanceImpact ?? trade.pnl ?? 0),
     0
@@ -93,7 +112,7 @@ export function getTradeStats(trades, startBalance) {
   const balance = startBalance + totalBalanceImpact
   const wins = tradeRecords.filter((trade) => trade.result === "win").length
   const winRate = tradeRecords.length ? (wins / tradeRecords.length) * 100 : 0
-  const dailyPnL = tradeRecords.reduce((sum, trade) => {
+  const dailyPnL = pnlRecords.reduce((sum, trade) => {
     if (!isTradeFromToday(trade.createdAt)) return sum
 
     return sum + (Number(trade.pnl) || 0)

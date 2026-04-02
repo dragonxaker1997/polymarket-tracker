@@ -5,6 +5,7 @@ const TRANSACTION_COLUMNS = [
   "id",
   "user_id",
   "account_id",
+  "transaction_type",
   "amount",
   "note",
   "created_at",
@@ -111,8 +112,30 @@ export async function insertWithdrawal(userId, accountId, withdrawal) {
       id: withdrawal.id,
       user_id: userId,
       account_id: accountId,
+      transaction_type: "withdrawal",
       amount: withdrawal.amount,
       note: withdrawal.note || null,
+    })
+    .select(TRANSACTION_COLUMNS)
+    .single()
+
+  if (error) throw error
+
+  return mapTransactionFromRow(data)
+}
+
+export async function insertAdjustment(userId, accountId, adjustment) {
+  const client = requireSupabase()
+
+  const { data, error } = await client
+    .from("balance_transactions")
+    .insert({
+      id: adjustment.id,
+      user_id: userId,
+      account_id: accountId,
+      transaction_type: "adjustment",
+      amount: adjustment.amount,
+      note: adjustment.note || null,
     })
     .select(TRANSACTION_COLUMNS)
     .single()
@@ -126,7 +149,7 @@ export async function removeRecord(userId, accountId, record) {
   const client = requireSupabase()
 
   const { error } =
-    record.recordType === "withdrawal"
+    record.recordType === "withdrawal" || record.recordType === "adjustment"
       ? await client
           .from("balance_transactions")
           .delete()
@@ -148,7 +171,7 @@ export async function updateRecordNote(userId, accountId, record, note) {
 
   const trimmedNote = note?.trim() || null
   const { error: updateError } =
-    record.recordType === "withdrawal"
+    record.recordType === "withdrawal" || record.recordType === "adjustment"
       ? await client
           .from("balance_transactions")
           .update({ note: trimmedNote })
@@ -165,7 +188,7 @@ export async function updateRecordNote(userId, accountId, record, note) {
   if (updateError) throw updateError
 
   const { data, error } =
-    record.recordType === "withdrawal"
+    record.recordType === "withdrawal" || record.recordType === "adjustment"
       ? await client
           .from("balance_transactions")
           .select(TRANSACTION_COLUMNS)
@@ -183,7 +206,7 @@ export async function updateRecordNote(userId, accountId, record, note) {
 
   if (error) throw error
 
-  return record.recordType === "withdrawal" ? mapTransactionFromRow(data) : mapTradeFromRow(data)
+  return record.recordType === "trade" ? mapTradeFromRow(data) : mapTransactionFromRow(data)
 }
 
 export async function resetDashboard(userId, accountId) {
@@ -289,13 +312,30 @@ function mapTradeFromRow(row) {
 }
 
 function mapTransactionFromRow(row) {
+  const transactionType = row.transaction_type ?? "withdrawal"
+  const amount = Number(row.amount)
+
+  if (transactionType === "adjustment") {
+    return {
+      id: row.id,
+      recordType: "adjustment",
+      accountId: row.account_id,
+      amount,
+      pnl: amount,
+      balanceImpact: amount,
+      note: row.note ?? "",
+      result: "adjustment",
+      createdAt: row.created_at,
+    }
+  }
+
   return {
     id: row.id,
     recordType: "withdrawal",
     accountId: row.account_id,
-    amount: Number(row.amount),
+    amount,
     pnl: 0,
-    balanceImpact: -Number(row.amount),
+    balanceImpact: -amount,
     note: row.note ?? "",
     result: "withdrawal",
     createdAt: row.created_at,

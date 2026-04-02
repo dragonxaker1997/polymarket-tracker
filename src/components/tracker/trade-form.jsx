@@ -32,10 +32,18 @@ const CHECKLIST_ROWS = [
   ["HL10", "Break HL10 High", "Break HL10 Low"],
 ]
 
-export function TradeForm({ onSubmit, onAddWithdrawal, currentBalance, requireDangerConfirm }) {
+export function TradeForm({
+  onSubmit,
+  onAddWithdrawal,
+  onAddAdjustment,
+  currentBalance,
+  requireDangerConfirm,
+}) {
   const [form, setForm] = useState(EMPTY_FORM)
   const [withdrawalAmount, setWithdrawalAmount] = useState("")
   const [withdrawalNote, setWithdrawalNote] = useState("")
+  const [adjustmentAmount, setAdjustmentAmount] = useState("")
+  const [adjustmentNote, setAdjustmentNote] = useState("")
 
   const preview = useMemo(
     () => getTradePreview(form.size, form.entry, form.exit),
@@ -75,6 +83,15 @@ export function TradeForm({ onSubmit, onAddWithdrawal, currentBalance, requireDa
     if (created) {
       setWithdrawalAmount("")
       setWithdrawalNote("")
+    }
+  }
+
+  async function handleAddAdjustment() {
+    const created = await onAddAdjustment(adjustmentAmount, adjustmentNote)
+
+    if (created) {
+      setAdjustmentAmount("")
+      setAdjustmentNote("")
     }
   }
 
@@ -147,6 +164,33 @@ export function TradeForm({ onSubmit, onAddWithdrawal, currentBalance, requireDa
             className="mt-3 h-11 w-full rounded-xl bg-slate-100 text-slate-950 hover:bg-white"
           >
             Add withdrawal
+          </Button>
+        </div>
+
+        <div className="mt-4 rounded-xl border border-slate-800 bg-[#020617] p-4">
+          <div className="mb-2 text-sm font-medium text-slate-300">Balance adjustment</div>
+          <div className="mb-3 text-xs text-slate-500">
+            Use negative value for hidden fee, positive value for manual correction.
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <Input
+              placeholder="Adjustment amount $"
+              value={adjustmentAmount}
+              onChange={(event) => setAdjustmentAmount(event.target.value)}
+              className="h-11 rounded-xl border-slate-800 bg-slate-950 px-3 text-white placeholder:text-slate-500"
+            />
+            <Input
+              placeholder="Adjustment note"
+              value={adjustmentNote}
+              onChange={(event) => setAdjustmentNote(event.target.value)}
+              className="h-11 rounded-xl border-slate-800 bg-slate-950 px-3 text-white placeholder:text-slate-500"
+            />
+          </div>
+          <Button
+            onClick={handleAddAdjustment}
+            className="mt-3 h-11 w-full rounded-xl bg-amber-200 text-slate-950 hover:bg-amber-100"
+          >
+            Add adjustment
           </Button>
         </div>
 

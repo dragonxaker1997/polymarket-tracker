@@ -63,6 +63,7 @@ create table if not exists public.balance_transactions (
   id bigint primary key,
   user_id uuid not null references auth.users(id) on delete cascade,
   account_id uuid references public.accounts(id) on delete cascade,
+  transaction_type text not null default 'withdrawal',
   amount numeric not null,
   note text,
   created_at timestamptz not null default now()
@@ -70,6 +71,13 @@ create table if not exists public.balance_transactions (
 
 alter table public.balance_transactions
 add column if not exists account_id uuid references public.accounts(id) on delete cascade;
+
+alter table public.balance_transactions
+add column if not exists transaction_type text not null default 'withdrawal';
+
+update public.balance_transactions
+set transaction_type = 'withdrawal'
+where transaction_type is null;
 
 create or replace function public.ensure_default_accounts(target_user_id uuid)
 returns void
@@ -374,13 +382,28 @@ as $$
       a.name as account_name,
       a.start_balance,
       u.email::text as email,
-      coalesce(sum(t.pnl), 0) as total_pnl,
-      count(t.id) as trades_count,
-      coalesce(sum(case when t.result = 'win' then 1 else 0 end), 0) as wins
+      coalesce(trades.total_pnl, 0) + coalesce(adjustments.total_adjustment_pnl, 0) as total_pnl,
+      coalesce(trades.trades_count, 0) as trades_count,
+      coalesce(trades.wins, 0) as wins
     from public.accounts a
     join auth.users u on u.id = a.user_id
-    left join public.trades t on t.account_id = a.id
-    group by a.user_id, a.id, a.name, a.start_balance, u.email
+    left join (
+      select
+        t.account_id,
+        coalesce(sum(t.pnl), 0) as total_pnl,
+        count(t.id) as trades_count,
+        coalesce(sum(case when t.result = 'win' then 1 else 0 end), 0) as wins
+      from public.trades t
+      group by t.account_id
+    ) trades on trades.account_id = a.id
+    left join (
+      select
+        bt.account_id,
+        coalesce(sum(bt.amount), 0) as total_adjustment_pnl
+      from public.balance_transactions bt
+      where bt.transaction_type = 'adjustment'
+      group by bt.account_id
+    ) adjustments on adjustments.account_id = a.id
   ),
   latest_trade_result as (
     select distinct on (t.user_id, t.account_id)
@@ -470,20 +493,35 @@ as $$
       and lower(email) = lower('YOUR_ADMIN_EMAIL')
   )
   select
-    (t.created_at at time zone 'UTC')::date as trade_date,
-    t.user_id,
+    (entry.created_at at time zone 'UTC')::date as trade_date,
+    entry.user_id,
     a.id as account_id,
     a.name as account_name,
     coalesce(nullif(trim(p.display_name), ''), null) as display_name,
     u.email::text as email,
-    sum(t.pnl) as daily_pnl
-  from public.trades t
-  join public.accounts a on a.id = t.account_id
-  join auth.users u on u.id = t.user_id
-  left join public.profiles p on p.user_id = t.user_id
+    sum(entry.daily_pnl) as daily_pnl
+  from (
+    select
+      t.created_at,
+      t.user_id,
+      t.account_id,
+      t.pnl as daily_pnl
+    from public.trades t
+    union all
+    select
+      bt.created_at,
+      bt.user_id,
+      bt.account_id,
+      bt.amount as daily_pnl
+    from public.balance_transactions bt
+    where bt.transaction_type = 'adjustment'
+  ) entry
+  join public.accounts a on a.id = entry.account_id
+  join auth.users u on u.id = entry.user_id
+  left join public.profiles p on p.user_id = entry.user_id
   where exists (select 1 from admin_check)
-    and (t.created_at at time zone 'UTC')::date between date_from and date_to
-  group by (t.created_at at time zone 'UTC')::date, t.user_id, a.id, a.name, p.display_name, u.email
+    and (entry.created_at at time zone 'UTC')::date between date_from and date_to
+  group by (entry.created_at at time zone 'UTC')::date, entry.user_id, a.id, a.name, p.display_name, u.email
   order by trade_date, email, account_name, account_id;
 $$;
 
