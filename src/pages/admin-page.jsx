@@ -154,14 +154,12 @@ export function AdminPage() {
                   </thead>
                   <tbody>
                     {workers.map((worker) => (
-                      <tr key={worker.user_id} className="border-b border-slate-900/80">
+                      <tr key={worker.account_id} className="border-b border-slate-900/80">
                         <td className="px-6 py-4">
-                          <div className="font-medium text-white">
-                            {worker.display_name || worker.email}
+                          <div className="font-medium text-white">{worker.account_name}</div>
+                          <div className="mt-1 text-xs text-slate-500">
+                            {(worker.display_name || worker.email)}
                           </div>
-                          {worker.display_name ? (
-                            <div className="mt-1 text-xs text-slate-500">{worker.email}</div>
-                          ) : null}
                         </td>
                         <td className="px-6 py-4 text-slate-300">${worker.start_balance.toFixed(2)}</td>
                         <td
@@ -200,8 +198,11 @@ export function AdminPage() {
                       <div className="text-xs text-slate-500">No activity</div>
                     ) : (
                       day.items.map((item) => (
-                        <div key={`${day.date}-${item.user_id}`} className="rounded-lg border border-slate-800 bg-slate-950 p-2">
+                        <div key={`${day.date}-${item.user_id}-${item.account_name}`} className="rounded-lg border border-slate-800 bg-slate-950 p-2">
                           <div className="truncate text-xs text-slate-200">
+                            {item.account_name}
+                          </div>
+                          <div className="truncate text-[11px] text-slate-500">
                             {item.display_name || item.email}
                           </div>
                           <div className={`mt-1 text-xs font-semibold ${item.daily_pnl >= 0 ? "text-green-400" : "text-red-400"}`}>

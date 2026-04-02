@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from "react"
 import { Link } from "react-router-dom"
+import { Layers3, PencilLine, Wallet } from "lucide-react"
 
 import { SummaryCards } from "@/components/tracker/summary-cards"
 import { TradeForm } from "@/components/tracker/trade-form"
@@ -7,6 +8,7 @@ import { TradeHistory } from "@/components/tracker/trade-history"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { isAdminUser } from "@/lib/admin"
+import { cn } from "@/lib/utils"
 import {
   DEFAULT_START_BALANCE,
   buildEquityData,
@@ -23,6 +25,7 @@ import {
   saveWorkerProfile,
   updateRecordNote,
 } from "@/lib/trade-service"
+import { useAccount } from "@/providers/use-account"
 import { useAuth } from "@/providers/use-auth"
 
 const BalanceChart = lazy(() =>
@@ -33,14 +36,40 @@ const BalanceChart = lazy(() =>
 
 export function DashboardPage() {
   const { signOut, user } = useAuth()
+  const {
+    accounts,
+    activeAccount,
+    activeAccountId,
+    isLoading: isAccountsLoading,
+    setActiveAccountId,
+    addCustomAccount,
+    saveAccountUpdates,
+  } = useAccount()
   const [records, setRecords] = useState([])
   const [startBalance, setStartBalance] = useState(DEFAULT_START_BALANCE)
   const [displayName, setDisplayName] = useState("")
+  const [newAccountName, setNewAccountName] = useState("")
+  const [accountNameDraft, setAccountNameDraft] = useState("")
   const [isBootstrapping, setIsBootstrapping] = useState(true)
   const [isSavingProfile, setIsSavingProfile] = useState(false)
+  const [isSavingAccountName, setIsSavingAccountName] = useState(false)
   const [error, setError] = useState("")
 
   useEffect(() => {
+    setStartBalance(activeAccount?.startBalance ?? DEFAULT_START_BALANCE)
+  }, [activeAccount])
+
+  useEffect(() => {
+    setAccountNameDraft(activeAccount?.name ?? "")
+  }, [activeAccount])
+
+  useEffect(() => {
+    if (!activeAccountId) {
+      setRecords([])
+      setIsBootstrapping(isAccountsLoading)
+      return
+    }
+
     let active = true
 
     async function bootstrap() {
@@ -48,11 +77,14 @@ export function DashboardPage() {
       setError("")
 
       try {
-        const dashboard = await loadDashboard(user.id, DEFAULT_START_BALANCE)
+        const dashboard = await loadDashboard(
+          user.id,
+          activeAccountId,
+          activeAccount?.startBalance ?? DEFAULT_START_BALANCE
+        )
 
         if (!active) return
         setRecords(dashboard.records)
-        setStartBalance(dashboard.startBalance)
         setDisplayName(dashboard.displayName)
       } catch (nextError) {
         if (!active) return
@@ -69,7 +101,7 @@ export function DashboardPage() {
     return () => {
       active = false
     }
-  }, [user.id])
+  }, [activeAccount?.startBalance, activeAccountId, isAccountsLoading, user.id])
 
   const {
     totalPnL,
@@ -94,7 +126,7 @@ export function DashboardPage() {
 
     try {
       setError("")
-      const savedTrade = await insertTrade(user.id, trade)
+      const savedTrade = await insertTrade(user.id, activeAccountId, trade)
       setRecords((current) => [savedTrade, ...current])
       return true
     } catch (nextError) {
@@ -109,7 +141,7 @@ export function DashboardPage() {
 
     try {
       setError("")
-      const savedWithdrawal = await insertWithdrawal(user.id, withdrawal)
+      const savedWithdrawal = await insertWithdrawal(user.id, activeAccountId, withdrawal)
       setRecords((current) => [savedWithdrawal, ...current])
       return true
     } catch (nextError) {
@@ -121,7 +153,7 @@ export function DashboardPage() {
   async function handleDeleteRecord(record) {
     try {
       setError("")
-      await removeRecord(user.id, record)
+      await removeRecord(user.id, activeAccountId, record)
       setRecords((current) => current.filter((item) => item.id !== record.id || item.recordType !== record.recordType))
     } catch (nextError) {
       setError(nextError.message ?? "Failed to delete history item.")
@@ -131,7 +163,7 @@ export function DashboardPage() {
   async function handleUpdateRecordNote(record, note) {
     try {
       setError("")
-      const updatedRecord = await updateRecordNote(user.id, record, note)
+      const updatedRecord = await updateRecordNote(user.id, activeAccountId, record, note)
       setRecords((current) =>
         current.map((item) =>
           item.id === record.id && item.recordType === record.recordType ? updatedRecord : item
@@ -147,7 +179,8 @@ export function DashboardPage() {
   async function handleResetAll() {
     try {
       setError("")
-      await resetDashboard(user.id, DEFAULT_START_BALANCE)
+      await resetDashboard(user.id, activeAccountId)
+      await saveAccountUpdates(activeAccountId, { startBalance: DEFAULT_START_BALANCE })
       setRecords([])
       setStartBalance(DEFAULT_START_BALANCE)
     } catch (nextError) {
@@ -159,10 +192,12 @@ export function DashboardPage() {
     try {
       setIsSavingProfile(true)
       setError("")
-      await saveWorkerProfile(user.id, {
-        startBalance,
-        displayName,
-      })
+      await Promise.all([
+        saveWorkerProfile(user.id, {
+          displayName,
+        }),
+        activeAccountId ? saveAccountUpdates(activeAccountId, { startBalance }) : Promise.resolve(),
+      ])
     } catch (nextError) {
       setError(nextError.message ?? "Failed to save worker profile.")
     } finally {
@@ -177,6 +212,40 @@ export function DashboardPage() {
         subtitle="Fetching private data for the current account."
       />
     )
+  }
+
+  async function handleCreateAccount() {
+    if (!newAccountName.trim()) return
+
+    try {
+      setError("")
+      await addCustomAccount(newAccountName)
+      setNewAccountName("")
+    } catch (nextError) {
+      setError(nextError.message ?? "Failed to create account.")
+    }
+  }
+
+  async function handleAccountNameBlur() {
+    if (!activeAccount || activeAccount.type !== "custom") return
+
+    const trimmedName = accountNameDraft.trim()
+
+    if (!trimmedName || trimmedName === activeAccount.name) {
+      setAccountNameDraft(activeAccount.name)
+      return
+    }
+
+    try {
+      setIsSavingAccountName(true)
+      setError("")
+      await saveAccountUpdates(activeAccount.id, { name: trimmedName })
+    } catch (nextError) {
+      setAccountNameDraft(activeAccount.name)
+      setError(nextError.message ?? "Failed to rename account.")
+    } finally {
+      setIsSavingAccountName(false)
+    }
   }
 
   return (
@@ -242,7 +311,7 @@ export function DashboardPage() {
               onClick={handleResetAll}
               className="w-full rounded-xl bg-red-600 px-4 py-2 text-white hover:bg-red-500 md:w-auto"
             >
-              Reset all
+              Reset active account
             </Button>
             <Button
               variant="outline"
@@ -253,6 +322,68 @@ export function DashboardPage() {
             </Button>
           </div>
         </div>
+
+        <Card className="mb-8 overflow-visible border-slate-800 bg-[#0f172a] py-0 text-white ring-0">
+          <CardContent className="px-5 pt-5 pb-5 md:px-6 md:pt-6 md:pb-6">
+            <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+              <div className="max-w-2xl">
+                <div className="text-sm uppercase tracking-[0.18em] text-slate-500">Accounts</div>
+                <h2 className="mt-2 text-2xl font-semibold">Choose the account you want to work in</h2>
+                <div className="mt-2 text-sm text-slate-400">
+                  Every account keeps its own start balance, trades, withdrawals and stats.
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-800 bg-[#020617] px-4 py-3 text-sm text-slate-300">
+                <div className="text-slate-500">Current account</div>
+                <div className="mt-1 font-medium text-white">{activeAccount?.name ?? "No account selected"}</div>
+                <div className="mt-1 text-xs uppercase tracking-[0.16em] text-slate-500">
+                  {formatAccountType(activeAccount?.type)}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+              {accounts.map((account) => (
+                <button
+                  key={account.id}
+                  type="button"
+                  onClick={() => setActiveAccountId(account.id)}
+                  className={cn(
+                    "rounded-2xl border px-4 py-4 text-left transition-all",
+                    account.id === activeAccountId
+                      ? "border-sky-400 bg-sky-500/10 shadow-[0_0_0_1px_rgba(56,189,248,0.35)]"
+                      : "border-slate-800 bg-[#020617] hover:border-slate-600 hover:bg-slate-950"
+                  )}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="font-medium text-white">{account.name}</div>
+                      <div className="mt-1 text-xs text-slate-500">
+                        {formatAccountType(account.type)}
+                      </div>
+                    </div>
+                    <div
+                      className={cn(
+                        "rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.18em]",
+                        account.id === activeAccountId
+                          ? "bg-sky-400/20 text-sky-200"
+                          : "bg-slate-800 text-slate-400"
+                      )}
+                    >
+                      {account.id === activeAccountId ? "Active" : "Open"}
+                    </div>
+                  </div>
+
+                  <div className="mt-4 flex items-center justify-between text-sm">
+                    <div className="text-slate-500">Start balance</div>
+                    <div className="font-semibold text-slate-200">${account.startBalance.toFixed(2)}</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
 
         {error ? (
           <div className="mb-6 rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200">
@@ -275,6 +406,57 @@ export function DashboardPage() {
         <div className="mb-8 grid grid-cols-1 gap-6 lg:grid-cols-2">
           <Card className="border-slate-800 bg-[#0f172a] py-0 text-white ring-0">
             <CardContent className="px-5 pt-5 pb-5">
+              <div className="mb-4 flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-sm text-slate-400">Account settings</div>
+                  <div className="mt-1 text-lg font-semibold text-white">
+                    {activeAccount?.name ?? "No account selected"}
+                  </div>
+                </div>
+
+                <div className="rounded-full border border-slate-800 bg-[#020617] px-3 py-1 text-xs uppercase tracking-[0.16em] text-slate-400">
+                  {formatAccountType(activeAccount?.type)}
+                </div>
+              </div>
+
+              <div className="mb-2 text-sm text-slate-400">Account name</div>
+              <div className="mb-4 flex items-center gap-3">
+                <div className="relative w-full">
+                  <input
+                    className="w-full rounded-xl border border-slate-800 bg-[#020617] px-3 py-2.5 pr-10 outline-none focus:border-slate-600 disabled:cursor-not-allowed disabled:opacity-60"
+                    value={accountNameDraft}
+                    onChange={(event) => setAccountNameDraft(event.target.value)}
+                    onBlur={handleAccountNameBlur}
+                    placeholder="Account name"
+                    disabled={!activeAccount || activeAccount.type !== "custom" || isSavingAccountName}
+                  />
+                  <PencilLine className="pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2 text-slate-500" />
+                </div>
+              </div>
+              <div className="mb-4 text-xs text-slate-500">
+                {activeAccount?.type === "custom"
+                  ? isSavingAccountName
+                    ? "Saving account name..."
+                    : "Custom account names can be edited."
+                  : "Main Account and Wallet 1-10 keep stable default names."}
+              </div>
+
+              <div className="mb-2 text-sm text-slate-400">Add custom account</div>
+              <div className="mb-4 flex gap-3">
+                <input
+                  className="w-full rounded-xl border border-slate-800 bg-[#020617] px-3 py-2.5 outline-none focus:border-slate-600"
+                  value={newAccountName}
+                  onChange={(event) => setNewAccountName(event.target.value)}
+                  placeholder="Custom account name"
+                />
+                <Button
+                  onClick={handleCreateAccount}
+                  className="rounded-xl bg-slate-100 text-slate-950 hover:bg-white"
+                >
+                  Add
+                </Button>
+              </div>
+
               <div className="mb-2 text-sm text-slate-400">Worker name</div>
               <input
                 className="mb-4 w-full rounded-xl border border-slate-800 bg-[#020617] px-3 py-2.5 outline-none focus:border-slate-600"
@@ -283,7 +465,9 @@ export function DashboardPage() {
                 onBlur={handleProfileBlur}
                 placeholder="Enter your worker name"
               />
-              <div className="mb-2 text-sm text-slate-400">Start balance</div>
+              <div className="mb-2 text-sm text-slate-400">
+                Start balance for {activeAccount?.name ?? "account"}
+              </div>
               <input
                 className="w-full rounded-xl border border-slate-800 bg-[#020617] px-3 py-2.5 outline-none focus:border-slate-600"
                 value={startBalance}
@@ -292,7 +476,9 @@ export function DashboardPage() {
                 placeholder="Start balance"
               />
               <div className="mt-2 text-xs text-slate-500">
-                {isSavingProfile ? "Saving..." : "Saved per worker account."}
+                {isSavingProfile
+                  ? "Saving profile and balance..."
+                  : "Worker name is shared for the user. Start balance is saved per account."}
               </div>
             </CardContent>
           </Card>
@@ -414,4 +600,12 @@ function CenteredState({ title, subtitle }) {
       </div>
     </div>
   )
+}
+
+function formatAccountType(type) {
+  if (type === "main") return "Main account"
+  if (type === "wallet") return "Wallet account"
+  if (type === "custom") return "Custom account"
+
+  return "Account"
 }

@@ -1,9 +1,10 @@
 import { supabase } from "@/lib/supabase"
 
-const PROFILE_COLUMNS = "user_id, start_balance, display_name"
+const PROFILE_COLUMNS = "user_id, display_name"
 const TRANSACTION_COLUMNS = [
   "id",
   "user_id",
+  "account_id",
   "amount",
   "note",
   "created_at",
@@ -11,6 +12,7 @@ const TRANSACTION_COLUMNS = [
 const TRADE_COLUMNS = [
   "id",
   "user_id",
+  "account_id",
   "size",
   "entry",
   "exit",
@@ -37,7 +39,7 @@ function requireSupabase() {
   return supabase
 }
 
-export async function loadDashboard(userId, fallbackStartBalance) {
+export async function loadDashboard(userId, accountId, fallbackStartBalance) {
   const client = requireSupabase()
 
   const [
@@ -51,11 +53,13 @@ export async function loadDashboard(userId, fallbackStartBalance) {
         .from("trades")
         .select(TRADE_COLUMNS)
         .eq("user_id", userId)
+        .eq("account_id", accountId)
         .order("created_at", { ascending: false }),
       client
         .from("balance_transactions")
         .select(TRANSACTION_COLUMNS)
         .eq("user_id", userId)
+        .eq("account_id", accountId)
         .order("created_at", { ascending: false }),
     ])
 
@@ -64,7 +68,7 @@ export async function loadDashboard(userId, fallbackStartBalance) {
   if (transactionsError) throw transactionsError
 
   return {
-    startBalance: Number(profile?.start_balance ?? fallbackStartBalance),
+    startBalance: fallbackStartBalance,
     displayName: profile?.display_name ?? "",
     records: [...(trades ?? []).map(mapTradeFromRow), ...(transactions ?? []).map(mapTransactionFromRow)]
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
@@ -77,7 +81,6 @@ export async function saveWorkerProfile(userId, profile) {
   const { error } = await client.from("profiles").upsert(
     {
       user_id: userId,
-      start_balance: profile.startBalance,
       display_name: profile.displayName?.trim() || null,
     },
     { onConflict: "user_id" }
@@ -86,12 +89,12 @@ export async function saveWorkerProfile(userId, profile) {
   if (error) throw error
 }
 
-export async function insertTrade(userId, trade) {
+export async function insertTrade(userId, accountId, trade) {
   const client = requireSupabase()
 
   const { data, error } = await client
     .from("trades")
-    .insert(mapTradeToInsert(userId, trade))
+    .insert(mapTradeToInsert(userId, accountId, trade))
     .select(TRADE_COLUMNS)
     .single()
 
@@ -100,7 +103,7 @@ export async function insertTrade(userId, trade) {
   return mapTradeFromRow(data)
 }
 
-export async function insertWithdrawal(userId, withdrawal) {
+export async function insertWithdrawal(userId, accountId, withdrawal) {
   const client = requireSupabase()
 
   const { data, error } = await client
@@ -108,6 +111,7 @@ export async function insertWithdrawal(userId, withdrawal) {
     .insert({
       id: withdrawal.id,
       user_id: userId,
+      account_id: accountId,
       amount: withdrawal.amount,
       note: withdrawal.note || null,
     })
@@ -119,18 +123,28 @@ export async function insertWithdrawal(userId, withdrawal) {
   return mapTransactionFromRow(data)
 }
 
-export async function removeRecord(userId, record) {
+export async function removeRecord(userId, accountId, record) {
   const client = requireSupabase()
 
   const { error } =
     record.recordType === "withdrawal"
-      ? await client.from("balance_transactions").delete().eq("user_id", userId).eq("id", record.id)
-      : await client.from("trades").delete().eq("user_id", userId).eq("id", record.id)
+      ? await client
+          .from("balance_transactions")
+          .delete()
+          .eq("user_id", userId)
+          .eq("account_id", accountId)
+          .eq("id", record.id)
+      : await client
+          .from("trades")
+          .delete()
+          .eq("user_id", userId)
+          .eq("account_id", accountId)
+          .eq("id", record.id)
 
   if (error) throw error
 }
 
-export async function updateRecordNote(userId, record, note) {
+export async function updateRecordNote(userId, accountId, record, note) {
   const client = requireSupabase()
 
   const trimmedNote = note?.trim() || null
@@ -140,11 +154,13 @@ export async function updateRecordNote(userId, record, note) {
           .from("balance_transactions")
           .update({ note: trimmedNote })
           .eq("user_id", userId)
+          .eq("account_id", accountId)
           .eq("id", record.id)
       : await client
           .from("trades")
           .update({ note: trimmedNote })
           .eq("user_id", userId)
+          .eq("account_id", accountId)
           .eq("id", record.id)
 
   if (updateError) throw updateError
@@ -155,12 +171,14 @@ export async function updateRecordNote(userId, record, note) {
           .from("balance_transactions")
           .select(TRANSACTION_COLUMNS)
           .eq("user_id", userId)
+          .eq("account_id", accountId)
           .eq("id", record.id)
           .maybeSingle()
       : await client
           .from("trades")
           .select(TRADE_COLUMNS)
           .eq("user_id", userId)
+          .eq("account_id", accountId)
           .eq("id", record.id)
           .maybeSingle()
 
@@ -169,36 +187,29 @@ export async function updateRecordNote(userId, record, note) {
   return record.recordType === "withdrawal" ? mapTransactionFromRow(data) : mapTradeFromRow(data)
 }
 
-export async function resetDashboard(userId, startBalance) {
+export async function resetDashboard(userId, accountId) {
   const client = requireSupabase()
 
-  const [{ error: tradesError }, { error: transactionsError }, { error: profileError }] = await Promise.all([
-    client.from("trades").delete().eq("user_id", userId),
-    client.from("balance_transactions").delete().eq("user_id", userId),
-    client.from("profiles").upsert(
-      {
-        user_id: userId,
-        start_balance: startBalance,
-        display_name: null,
-      },
-      { onConflict: "user_id" }
-    ),
+  const [{ error: tradesError }, { error: transactionsError }] = await Promise.all([
+    client.from("trades").delete().eq("user_id", userId).eq("account_id", accountId),
+    client.from("balance_transactions").delete().eq("user_id", userId).eq("account_id", accountId),
   ])
 
   if (tradesError) throw tradesError
   if (transactionsError) throw transactionsError
-  if (profileError) throw profileError
 }
 
 export async function loadWorkerSummaries() {
   const client = requireSupabase()
 
-  const { data, error } = await client.rpc("get_worker_summaries")
+  const { data, error } = await client.rpc("get_account_summaries")
 
   if (error) throw error
 
   return (data ?? []).map((row) => ({
     user_id: row.user_id,
+    account_id: row.account_id,
+    account_name: row.account_name ?? "",
     display_name: row.display_name ?? "",
     email: row.email,
     start_balance: Number(row.start_balance ?? 0),
@@ -223,16 +234,18 @@ export async function loadTeamDailyPnl(dateFrom, dateTo) {
   return (data ?? []).map((row) => ({
     trade_date: row.trade_date,
     user_id: row.user_id,
+    account_name: row.account_name ?? "",
     display_name: row.display_name ?? "",
     email: row.email,
     daily_pnl: Number(row.daily_pnl ?? 0),
   }))
 }
 
-function mapTradeToInsert(userId, trade) {
+function mapTradeToInsert(userId, accountId, trade) {
   return {
     id: trade.id,
     user_id: userId,
+    account_id: accountId,
     size: trade.size,
     entry: trade.entry,
     exit: trade.exit,
@@ -255,6 +268,7 @@ function mapTradeFromRow(row) {
   return {
     id: row.id,
     recordType: "trade",
+    accountId: row.account_id,
     size: Number(row.size),
     amount: Number(row.size),
     entry: Number(row.entry),
@@ -280,6 +294,7 @@ function mapTransactionFromRow(row) {
   return {
     id: row.id,
     recordType: "withdrawal",
+    accountId: row.account_id,
     amount: Number(row.amount),
     pnl: 0,
     balanceImpact: -Number(row.amount),
