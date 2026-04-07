@@ -1,33 +1,27 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from "react"
 import { Link } from "react-router-dom"
-import { PencilLine } from "lucide-react"
 
-import { SummaryCards } from "@/components/tracker/summary-cards"
+import polyjournalLogo from "@/assets/polyjournal-logo.svg"
 import { TradeForm } from "@/components/tracker/trade-form"
 import { TradeHistory } from "@/components/tracker/trade-history"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { isAdminUser } from "@/lib/admin"
 import {
   DEFAULT_START_BALANCE,
   TRADE_COOLDOWN_MS,
   buildEquityData,
-  createAdjustment,
+  createBalanceEvent,
   createTrade,
-  createWithdrawal,
   formatCountdown,
   getCooldownTrigger,
   getLocalDayKey,
   getTradeStats,
 } from "@/lib/trade-utils"
 import {
-  insertAdjustment,
-  insertWithdrawal,
+  insertBalanceEvent,
   insertTrade,
   loadDashboard,
   removeRecord,
-  resetDashboard,
-  saveWorkerProfile,
   updateRecordNote,
 } from "@/lib/trade-service"
 import { useAccount } from "@/providers/use-account"
@@ -84,30 +78,18 @@ export function DashboardPage() {
   const { signOut, user } = useAuth()
   const {
     accounts,
-    activeAccount,
     activeAccountId,
     isLoading: isAccountsLoading,
+    workspace,
     setActiveAccountId,
-    saveAccountUpdates,
   } = useAccount()
   const [records, setRecords] = useState([])
-  const [startBalance, setStartBalance] = useState(DEFAULT_START_BALANCE)
-  const [displayName, setDisplayName] = useState("")
-  const [accountNameDraft, setAccountNameDraft] = useState("")
+  const startBalance = DEFAULT_START_BALANCE
   const [isBootstrapping, setIsBootstrapping] = useState(true)
-  const [isSavingProfile, setIsSavingProfile] = useState(false)
-  const [isSavingAccountName, setIsSavingAccountName] = useState(false)
   const [cooldown, setCooldown] = useState(null)
   const [nowTimestamp, setNowTimestamp] = useState(Date.now())
   const [error, setError] = useState("")
-
-  useEffect(() => {
-    setStartBalance(activeAccount?.startBalance ?? DEFAULT_START_BALANCE)
-  }, [activeAccount])
-
-  useEffect(() => {
-    setAccountNameDraft(activeAccount?.name ?? "")
-  }, [activeAccount])
+  const cooldownEnabled = workspace?.rules?.cooldownEnabled ?? true
 
   useEffect(() => {
     if (!user?.id || !activeAccountId) {
@@ -127,7 +109,7 @@ export function DashboardPage() {
   }, [activeAccountId, user?.id])
 
   useEffect(() => {
-    if (!cooldown) return undefined
+    if (!cooldown || !cooldownEnabled) return undefined
 
     const intervalId = window.setInterval(() => {
       setNowTimestamp(Date.now())
@@ -136,16 +118,16 @@ export function DashboardPage() {
     return () => {
       window.clearInterval(intervalId)
     }
-  }, [cooldown])
+  }, [cooldown, cooldownEnabled])
 
   useEffect(() => {
-    if (!cooldown || !user?.id || !activeAccountId) return
+    if (!cooldown || !user?.id || !activeAccountId || !cooldownEnabled) return
 
     if (isCooldownExpired(cooldown, nowTimestamp)) {
       clearStoredCooldown(user.id, activeAccountId)
       setCooldown(null)
     }
-  }, [activeAccountId, cooldown, nowTimestamp, user?.id])
+  }, [activeAccountId, cooldown, cooldownEnabled, nowTimestamp, user?.id])
 
   useEffect(() => {
     if (!activeAccountId) {
@@ -164,12 +146,11 @@ export function DashboardPage() {
         const dashboard = await loadDashboard(
           user.id,
           activeAccountId,
-          activeAccount?.startBalance ?? DEFAULT_START_BALANCE
+          DEFAULT_START_BALANCE
         )
 
         if (!active) return
         setRecords(dashboard.records)
-        setDisplayName(dashboard.displayName)
       } catch (nextError) {
         if (!active) return
         setError(nextError.message ?? "Failed to load dashboard.")
@@ -185,13 +166,12 @@ export function DashboardPage() {
     return () => {
       active = false
     }
-  }, [activeAccount?.startBalance, activeAccountId, isAccountsLoading, user.id])
+  }, [activeAccountId, isAccountsLoading, user.id])
 
   const {
     totalPnL,
     dailyPnL,
     balance,
-    wins,
     winRate,
     tradeRecordsCount,
     transactionsCount,
@@ -206,7 +186,15 @@ export function DashboardPage() {
     [records, startBalance]
   )
   const equityData = useMemo(() => buildEquityData(records, startBalance), [records, startBalance])
+  const selectorAccounts = useMemo(() => {
+    const wallets = accounts.filter((account) => account.type === "wallet")
+
+    return wallets.length ? wallets : accounts
+  }, [accounts])
+  const tradeLimit = workspace?.capabilities?.maxTradesPerUser ?? null
+  const isTrialTradeLimitReached = tradeLimit !== null && tradeRecordsCount >= tradeLimit
   const activeCooldown = useMemo(() => {
+    if (!cooldownEnabled) return null
     if (!cooldown) return null
 
     const remainingMs = Math.max(0, cooldown.expiresAt - nowTimestamp)
@@ -217,11 +205,16 @@ export function DashboardPage() {
       remainingMs,
       remainingLabel: formatCountdown(remainingMs),
     }
-  }, [cooldown, nowTimestamp])
+  }, [cooldown, cooldownEnabled, nowTimestamp])
 
   async function handleAddTrade(form) {
     if (activeCooldown?.isActive) {
       setError("Cooldown is active for this wallet.")
+      return false
+    }
+
+    if (isTrialTradeLimitReached) {
+      setError(`You reached the free limit (${tradeLimit} trades). Upgrade to continue.`)
       return false
     }
 
@@ -232,7 +225,9 @@ export function DashboardPage() {
       setError("")
       const savedTrade = await insertTrade(user.id, activeAccountId, trade)
       const nextRecords = [savedTrade, ...records]
-      const trigger = getCooldownTrigger(nextRecords, startBalance, getLocalDayKey(savedTrade.createdAt))
+      const trigger = cooldownEnabled
+        ? getCooldownTrigger(nextRecords, startBalance, getLocalDayKey(savedTrade.createdAt))
+        : null
       setRecords(nextRecords)
 
       if (trigger) {
@@ -251,37 +246,26 @@ export function DashboardPage() {
 
       return true
     } catch (nextError) {
-      setError(nextError.message ?? "Failed to save trade.")
+      const nextMessage =
+        nextError.message === "trial_limit_reached"
+          ? `You reached the free limit (${tradeLimit} trades). Upgrade to continue.`
+          : nextError.message ?? "Failed to save trade."
+      setError(nextMessage)
       return false
     }
   }
 
-  async function handleAddWithdrawal(amount, note) {
-    const withdrawal = createWithdrawal(amount, note)
-    if (!withdrawal) return false
+  async function handleAddBalanceEvent(type, amount, note) {
+    const event = createBalanceEvent(type, amount, note)
+    if (!event) return false
 
     try {
       setError("")
-      const savedWithdrawal = await insertWithdrawal(user.id, activeAccountId, withdrawal)
-      setRecords((current) => [savedWithdrawal, ...current])
+      const savedEvent = await insertBalanceEvent(user.id, activeAccountId, event)
+      setRecords((current) => [savedEvent, ...current])
       return true
     } catch (nextError) {
-      setError(nextError.message ?? "Failed to save withdrawal.")
-      return false
-    }
-  }
-
-  async function handleAddAdjustment(amount, note) {
-    const adjustment = createAdjustment(amount, note)
-    if (!adjustment) return false
-
-    try {
-      setError("")
-      const savedAdjustment = await insertAdjustment(user.id, activeAccountId, adjustment)
-      setRecords((current) => [savedAdjustment, ...current])
-      return true
-    } catch (nextError) {
-      setError(nextError.message ?? "Failed to save adjustment.")
+      setError(nextError.message ?? "Failed to save balance event.")
       return false
     }
   }
@@ -312,35 +296,6 @@ export function DashboardPage() {
     }
   }
 
-  async function handleResetAll() {
-    try {
-      setError("")
-      await resetDashboard(user.id, activeAccountId)
-      await saveAccountUpdates(activeAccountId, { startBalance: DEFAULT_START_BALANCE })
-      setRecords([])
-      setStartBalance(DEFAULT_START_BALANCE)
-    } catch (nextError) {
-      setError(nextError.message ?? "Failed to reset dashboard.")
-    }
-  }
-
-  async function handleProfileBlur() {
-    try {
-      setIsSavingProfile(true)
-      setError("")
-      await Promise.all([
-        saveWorkerProfile(user.id, {
-          displayName,
-        }),
-        activeAccountId ? saveAccountUpdates(activeAccountId, { startBalance }) : Promise.resolve(),
-      ])
-    } catch (nextError) {
-      setError(nextError.message ?? "Failed to save worker profile.")
-    } finally {
-      setIsSavingProfile(false)
-    }
-  }
-
   if (isBootstrapping) {
     return (
       <CenteredState
@@ -350,131 +305,51 @@ export function DashboardPage() {
     )
   }
 
-  async function handleAccountNameBlur() {
-    if (!activeAccount) return
-
-    const trimmedName = accountNameDraft.trim()
-
-    if (!trimmedName || trimmedName === activeAccount.name) {
-      setAccountNameDraft(activeAccount.name)
-      return
-    }
-
-    try {
-      setIsSavingAccountName(true)
-      setError("")
-      await saveAccountUpdates(activeAccount.id, { name: trimmedName })
-    } catch (nextError) {
-      setAccountNameDraft(activeAccount.name)
-      setError(nextError.message ?? "Failed to rename account.")
-    } finally {
-      setIsSavingAccountName(false)
-    }
-  }
-
   return (
-    <div className="min-h-screen bg-[#020617] p-6 text-white md:p-10">
-      <div className="mx-auto max-w-7xl">
-        <div className="mb-8 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+    <div className="min-h-screen bg-[#020617] p-4 text-white md:p-6 xl:p-7">
+      <div className="mx-auto max-w-[1720px]">
+        <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
-            <div className="text-sm uppercase tracking-[0.2em] text-slate-400">Polymarket journal</div>
-            <h1 className="mt-2 text-3xl font-bold md:text-5xl">Worker Dashboard</h1>
+            <div className="flex items-center gap-2.5">
+              <img src={polyjournalLogo} alt="PolyJournal logo" className="h-8 w-8 md:h-9 md:w-9" />
+              <h1 className="text-3xl font-bold md:text-4xl">PolyJournal</h1>
+            </div>
           </div>
 
-          <div className="flex flex-col gap-3 md:flex-row">
+          <div className="flex flex-col gap-2.5 md:flex-row md:items-center">
+            <select
+              value={activeAccountId}
+              onChange={(event) => setActiveAccountId(event.target.value)}
+              className="h-10 min-w-44 rounded-xl border border-slate-700 bg-slate-900 px-3 text-sm text-white outline-none focus:border-slate-500"
+            >
+              {selectorAccounts.map((account) => (
+                <option key={account.id} value={account.id}>
+                  {account.name}
+                </option>
+              ))}
+            </select>
             <Button
               asChild
               variant="outline"
-              className="w-full rounded-xl border-slate-700 bg-slate-900 text-white hover:bg-slate-800 md:w-auto"
+              className="h-10 rounded-xl border-slate-700 bg-slate-900 text-white hover:bg-slate-800"
             >
-              <a
-                href="https://polymarket.com/event/btc-updown-15m-1773242100"
-                target="_blank"
-                rel="noreferrer"
-              >
-                Polymarket 15M
-              </a>
+              <Link to="/settings">Settings</Link>
             </Button>
             <Button
               asChild
-              variant="outline"
-              className="w-full rounded-xl border-slate-700 bg-slate-900 text-white hover:bg-slate-800 md:w-auto"
+              className="h-10 rounded-xl bg-white text-slate-950 hover:bg-slate-100"
             >
-              <a
-                href="https://www.tradingview.com/chart/w0q6KINR/"
-                target="_blank"
-                rel="noreferrer"
-              >
-                TradingView
-              </a>
-            </Button>
-            <Button
-              asChild
-              variant="outline"
-              className="w-full rounded-xl border-slate-700 bg-slate-900 text-white hover:bg-slate-800 md:w-auto"
-            >
-              <a
-                href="https://terminal.polysigma.io/"
-                target="_blank"
-                rel="noreferrer"
-              >
-                Terminal
-              </a>
-            </Button>
-            {isAdminUser(user.email) ? (
-              <Button
-                asChild
-                variant="outline"
-                className="w-full rounded-xl border-slate-700 bg-slate-900 text-white hover:bg-slate-800 md:w-auto"
-              >
-                <Link to="/admin">Admin overview</Link>
-              </Button>
-            ) : null}
-            <Button
-              variant="destructive"
-              onClick={handleResetAll}
-              className="w-full rounded-xl bg-red-600 px-4 py-2 text-white hover:bg-red-500 md:w-auto"
-            >
-              Reset active account
+              <Link to="/upgrade">Upgrade</Link>
             </Button>
             <Button
               variant="outline"
               onClick={signOut}
-              className="w-full rounded-xl border-slate-700 bg-slate-900 text-white hover:bg-slate-800 md:w-auto"
+              className="h-10 rounded-xl border-slate-700 bg-slate-900 text-white hover:bg-slate-800"
             >
               Sign out
             </Button>
           </div>
         </div>
-
-        <Card className="mb-8 overflow-visible border-slate-800 bg-[#0f172a] py-0 text-white ring-0">
-          <CardContent className="px-5 pt-5 pb-5 md:px-6 md:pt-6 md:pb-6">
-            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px] lg:items-end">
-              <div>
-                <div className="text-sm uppercase tracking-[0.18em] text-slate-500">Accounts</div>
-                <h2 className="mt-2 text-2xl font-semibold">Choose the account you want to work in</h2>
-                <div className="mt-2 text-sm text-slate-400">
-                  Every account keeps its own start balance, trades, withdrawals and stats.
-                </div>
-              </div>
-
-              <div>
-                <div className="mb-2 text-sm text-slate-400">Wallet selector</div>
-                <select
-                  value={activeAccountId}
-                  onChange={(event) => setActiveAccountId(event.target.value)}
-                  className="w-full rounded-xl border border-slate-800 bg-[#020617] px-3 py-3 outline-none focus:border-slate-600"
-                >
-                  {accounts.map((account) => (
-                    <option key={account.id} value={account.id}>
-                      {account.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
 
         {error ? (
           <div className="mb-6 rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200">
@@ -494,136 +369,83 @@ export function DashboardPage() {
           </div>
         ) : null}
 
-        <div className="mb-8 grid grid-cols-1 gap-6 lg:grid-cols-2">
-          <Card className="border-slate-800 bg-[#0f172a] py-0 text-white ring-0">
-            <CardContent className="px-5 pt-5 pb-5">
-              <div className="mb-4 flex items-start justify-between gap-3">
-                <div>
-                  <div className="text-sm text-slate-400">Account settings</div>
-                  <div className="mt-1 text-lg font-semibold text-white">
-                    {activeAccount?.name ?? "No account selected"}
-                  </div>
-                </div>
+        {isTrialTradeLimitReached ? (
+          <div className="mb-6 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200">
+            <div className="font-medium text-white">
+              You reached the free limit ({tradeLimit} trades). Upgrade to continue.
+            </div>
+            <Button
+              className="mt-3 h-10 rounded-xl bg-white text-slate-950 hover:bg-slate-100"
+              onClick={() =>
+                window.alert("Upgrade CTA placeholder: move from base to a paid plan.")
+              }
+            >
+              Upgrade
+            </Button>
+          </div>
+        ) : null}
 
-                <div className="rounded-full border border-slate-800 bg-[#020617] px-3 py-1 text-xs uppercase tracking-[0.16em] text-slate-400">
-                  {formatAccountType(activeAccount?.type)}
+        <div className="mb-6 grid grid-cols-1 gap-4 xl:grid-cols-[260px_minmax(0,1fr)_440px]">
+          <div className="space-y-4">
+            <Card className="border-slate-800 bg-[#0f172a] py-0 text-white ring-0">
+              <CardContent className="px-4 pt-4 pb-4">
+                <div className="text-[11px] uppercase tracking-[0.16em] text-slate-500">Sizing guide</div>
+                <div className="mt-3 space-y-2 text-sm">
+                  <SizingRow label="12%" size={quickSizes[0]} />
+                  <SizingRow label="15%" size={quickSizes[1]} />
+                  <SizingRow label="20%" size={quickSizes[2]} />
                 </div>
-              </div>
+              </CardContent>
+            </Card>
 
-              <div className="mb-2 text-sm text-slate-400">Account name</div>
-              <div className="mb-4 flex items-center gap-3">
-                <div className="relative w-full">
-                  <input
-                    className="w-full rounded-xl border border-slate-800 bg-[#020617] px-3 py-2.5 pr-10 outline-none focus:border-slate-600 disabled:cursor-not-allowed disabled:opacity-60"
-                    value={accountNameDraft}
-                    onChange={(event) => setAccountNameDraft(event.target.value)}
-                    onBlur={handleAccountNameBlur}
-                    placeholder="Account name"
-                    disabled={!activeAccount || isSavingAccountName}
+            <Card className="border-slate-800 bg-[#0f172a] py-0 text-white ring-0">
+              <CardContent className="px-4 pt-4 pb-4">
+                <div className="text-[11px] uppercase tracking-[0.16em] text-slate-500">Key metrics</div>
+                <div className="mt-3 space-y-2.5">
+                  <MetricRow label="Balance" value={`$${balance.toFixed(2)}`} tone="text-white" />
+                  <MetricRow
+                    label="Total PnL"
+                    value={`${totalPnL >= 0 ? "+" : ""}$${totalPnL.toFixed(2)}`}
+                    tone={totalPnL >= 0 ? "text-green-400" : "text-red-400"}
                   />
-                  <PencilLine className="pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2 text-slate-500" />
+                  <MetricRow
+                    label="Daily PnL"
+                    value={`${dailyPnL >= 0 ? "+" : ""}$${dailyPnL.toFixed(2)}`}
+                    tone={dailyPnL >= 0 ? "text-green-400" : "text-red-400"}
+                  />
+                  <MetricRow label="Transactions" value={String(transactionsCount)} tone="text-white" />
+                  <MetricRow label="Volume" value={`$${volume.toFixed(2)}`} tone="text-white" />
+                  <MetricRow label="Streak" value={`${streak}${streakLabel}`} tone="text-white" />
+                  <MetricRow label="Win rate" value={`${winRate.toFixed(1)}%`} tone="text-white" />
                 </div>
-              </div>
-              <div className="mb-4 text-xs text-slate-500">
-                {isSavingAccountName ? "Saving account name..." : "You can rename any account here if needed."}
-              </div>
+              </CardContent>
+            </Card>
+          </div>
 
-              <div className="mb-2 text-sm text-slate-400">Worker name</div>
-              <input
-                className="mb-4 w-full rounded-xl border border-slate-800 bg-[#020617] px-3 py-2.5 outline-none focus:border-slate-600"
-                value={displayName}
-                onChange={(event) => setDisplayName(event.target.value)}
-                onBlur={handleProfileBlur}
-                placeholder="Enter your worker name"
-              />
-              <div className="mb-2 text-sm text-slate-400">
-                Start balance for {activeAccount?.name ?? "account"}
-              </div>
-              <input
-                className="w-full rounded-xl border border-slate-800 bg-[#020617] px-3 py-2.5 outline-none focus:border-slate-600"
-                value={startBalance}
-                onChange={(event) => setStartBalance(Number(event.target.value) || 0)}
-                onBlur={handleProfileBlur}
-                placeholder="Start balance"
-              />
-              <div className="mt-2 text-xs text-slate-500">
-                {isSavingProfile
-                  ? "Saving profile and balance..."
-                  : "Worker name is shared for the user. Start balance is saved per account."}
-              </div>
-            </CardContent>
-          </Card>
+          <div>
+            <Suspense fallback={<ChartFallback compact />}>
+              <BalanceChart data={equityData} chartHeightClass="h-[26rem] 2xl:h-[30rem]" />
+            </Suspense>
+          </div>
 
-          <Card className="border-slate-800 bg-[#0f172a] py-0 text-white ring-0">
-            <CardContent className="px-5 pt-5 pb-5">
-              <div className="mb-3 text-sm text-slate-400">Quick size guide from current balance</div>
-              <div className="grid grid-cols-3 gap-3">
-                <QuickSizeCard label="12%" value={quickSizes[0]} />
-                <QuickSizeCard label="15%" value={quickSizes[1]} />
-                <QuickSizeCard label="20%" value={quickSizes[2]} />
-              </div>
-
-              <div className="mt-5 rounded-xl border border-slate-800 bg-[#020617] p-4">
-                <div className="text-sm font-medium text-slate-300">Stop loss guide</div>
-                <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  <RiskGuideCard label="12% size" sizeValue={quickSizes[0]} />
-                  <RiskGuideCard label="15% size" sizeValue={quickSizes[1]} />
-                  <RiskGuideCard label="20% size" sizeValue={quickSizes[2]} />
-                </div>
-              </div>
-
-              <div className="mt-5 rounded-xl border border-slate-800 bg-[#020617] p-4">
-                <div className="text-sm font-medium text-slate-300">Market sessions</div>
-                <div className="mt-3 space-y-2 text-sm text-slate-400">
-                  <div>
-                    <span className="text-slate-200">05:00 UTC - 11:00 UTC</span>: good market
-                  </div>
-                  <div>
-                    <span className="text-slate-200">11:00 UTC - 14:00 UTC</span>: high volatility
-                  </div>
-                  <div>
-                    <span className="text-slate-200">14:00 UTC - 00:00 UTC</span>: dead market
-                  </div>
-                </div>
-                <div className="mt-4 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm font-medium text-amber-200">
-                  On FRS meeting days, do not trade from 11:00 UTC at all.
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          <div className="xl:sticky xl:top-4 xl:self-start">
+            <TradeForm
+              onSubmit={handleAddTrade}
+              onAddBalanceEvent={handleAddBalanceEvent}
+              currentBalance={balance}
+              cooldown={activeCooldown}
+              tradeUsage={tradeRecordsCount}
+              tradeLimit={tradeLimit}
+              trialLimitReached={isTrialTradeLimitReached}
+              requireDangerConfirm={showBreakWarning}
+              onUpgrade={() =>
+                window.alert("Upgrade CTA placeholder: move from base to a paid plan.")
+              }
+            />
+          </div>
         </div>
 
-        <div className="mb-8">
-          <SummaryCards
-            balance={balance}
-            startBalance={startBalance}
-            totalPnL={totalPnL}
-            dailyPnL={dailyPnL}
-            tradesCount={tradeRecordsCount}
-            transactionsCount={transactionsCount}
-            volume={volume}
-            streak={streak}
-            streakLabel={streakLabel}
-            winRate={winRate}
-            wins={wins}
-          />
-        </div>
-
-        <div className="mb-8">
-          <Suspense fallback={<ChartFallback />}>
-            <BalanceChart data={equityData} />
-          </Suspense>
-        </div>
-
-        <div className="mb-8 grid grid-cols-1 gap-6 xl:grid-cols-3">
-          <TradeForm
-            onSubmit={handleAddTrade}
-            onAddWithdrawal={handleAddWithdrawal}
-            onAddAdjustment={handleAddAdjustment}
-            currentBalance={balance}
-            cooldown={activeCooldown}
-            requireDangerConfirm={showBreakWarning}
-          />
+        <div className="mb-6">
           <TradeHistory
             trades={records}
             onDelete={handleDeleteRecord}
@@ -635,31 +457,36 @@ export function DashboardPage() {
   )
 }
 
-function QuickSizeCard({ label, value }) {
+function SizingRow({ label, size }) {
+  const stopLoss = size * 0.25
+
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-3 text-center">
-      <div className="text-xs text-slate-400">{label}</div>
-      <div className="mt-1 font-semibold text-slate-100">${value.toFixed(2)}</div>
+    <div className="flex items-center justify-between rounded-lg border border-slate-800 bg-[#020617] px-3 py-2">
+      <div className="font-medium text-slate-200">{label}</div>
+      <div className="text-right text-slate-300">
+        ${size.toFixed(2)} <span className="text-slate-500">(SL ${stopLoss.toFixed(2)})</span>
+      </div>
     </div>
   )
 }
 
-function RiskGuideCard({ label, sizeValue }) {
-  const stopLoss = sizeValue * 0.25
-
+function MetricRow({ label, value, tone = "text-white" }) {
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-3 text-center">
-      <div className="text-xs text-slate-400">{label}</div>
-      <div className="mt-1 text-lg font-semibold text-slate-100">${stopLoss.toFixed(2)}</div>
-      <div className="mt-1 text-xs text-slate-500">stop loss 25% of size</div>
+    <div className="flex items-center justify-between text-sm">
+      <div className="text-slate-400">{label}</div>
+      <div className={`font-semibold ${tone}`}>{value}</div>
     </div>
   )
 }
 
-function ChartFallback() {
+function ChartFallback({ compact = false }) {
   return (
     <Card className="border-slate-800 bg-[#0f172a] py-0 text-white ring-0">
-      <CardContent className="flex h-72 items-center justify-center px-5 py-5 text-slate-400 md:px-6 md:py-6">
+      <CardContent
+        className={`flex items-center justify-center px-5 py-5 text-slate-400 md:px-6 md:py-6 ${
+          compact ? "h-[26rem]" : "h-72"
+        }`}
+      >
         Loading chart...
       </CardContent>
     </Card>
@@ -675,12 +502,4 @@ function CenteredState({ title, subtitle }) {
       </div>
     </div>
   )
-}
-
-function formatAccountType(type) {
-  if (type === "main") return "Main account"
-  if (type === "wallet") return "Wallet account"
-  if (type === "custom") return "Custom account"
-
-  return "Account"
 }

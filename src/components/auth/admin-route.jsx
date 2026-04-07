@@ -1,16 +1,20 @@
 import { Navigate, Outlet } from "react-router-dom"
 
 import { isAdminUser } from "@/lib/admin"
+import { useAccount } from "@/providers/use-account"
 import { useAuth } from "@/providers/use-auth"
 
 export function AdminRoute() {
   const { isLoading, user } = useAuth()
+  const { workspace, isLoading: isWorkspaceLoading } = useAccount()
 
-  if (isLoading) {
-    return <CenteredState label="Checking admin access..." />
+  if (isLoading || isWorkspaceLoading) {
+    return <CenteredState label="Checking workspace access..." />
   }
 
-  if (!user || !isAdminUser(user.email)) {
+  const hasTeamAccess = Boolean(workspace?.capabilities?.teamMode || isAdminUser(user?.email))
+
+  if (!user || !hasTeamAccess) {
     return <Navigate to="/" replace />
   }
 

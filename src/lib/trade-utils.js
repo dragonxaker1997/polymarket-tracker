@@ -1,12 +1,191 @@
-export const DEFAULT_START_BALANCE = 47
+export const DEFAULT_START_BALANCE = 0
 export const TRADE_COOLDOWN_MS = 60 * 60 * 1000
+export const BALANCE_EVENT_TYPES = {
+  DEPOSIT: "deposit",
+  WITHDRAWAL: "withdrawal",
+  FEES: "fees",
+}
+export const TRADE_INPUT_LIMITS = {
+  size: {
+    min: 0.01,
+    max: 100000,
+  },
+  priceCents: {
+    min: 1,
+    max: 99,
+  },
+}
+
+const COMPACT_NUMBER_FORMATTER = new Intl.NumberFormat("en-US", {
+  notation: "compact",
+  maximumFractionDigits: 2,
+})
+
+const STANDARD_NUMBER_FORMATTER = new Intl.NumberFormat("en-US", {
+  maximumFractionDigits: 2,
+})
+
+const COMPACT_CURRENCY_FORMATTER = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  notation: "compact",
+  maximumFractionDigits: 2,
+})
+
+const STANDARD_CURRENCY_FORMATTER = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  maximumFractionDigits: 2,
+})
+
+function getTrimmedValue(value) {
+  if (typeof value === "string") return value.trim()
+  if (value === null || value === undefined) return ""
+
+  return String(value).trim()
+}
+
+function validateSize(value) {
+  const normalizedValue = getTrimmedValue(value)
+
+  if (!normalizedValue) {
+    return {
+      isValid: false,
+      error: "Enter a trade size.",
+      value: null,
+    }
+  }
+
+  if (!/^\d+(\.\d{0,2})?$/.test(normalizedValue)) {
+    return {
+      isValid: false,
+      error: "Use a positive dollar amount with up to 2 decimals.",
+      value: null,
+    }
+  }
+
+  const numericValue = Number(normalizedValue)
+
+  if (!Number.isFinite(numericValue) || numericValue <= 0) {
+    return {
+      isValid: false,
+      error: "Trade size must be greater than $0.",
+      value: null,
+    }
+  }
+
+  if (numericValue > TRADE_INPUT_LIMITS.size.max) {
+    return {
+      isValid: false,
+      error: `Trade size must be $${TRADE_INPUT_LIMITS.size.max.toLocaleString()} or less.`,
+      value: null,
+    }
+  }
+
+  return {
+    isValid: true,
+    error: "",
+    value: numericValue,
+  }
+}
+
+function validatePriceCents(value, label) {
+  const normalizedValue = getTrimmedValue(value)
+
+  if (!normalizedValue) {
+    return {
+      isValid: false,
+      error: `Enter ${label.toLowerCase()} in cents.`,
+      value: null,
+    }
+  }
+
+  if (!/^\d+$/.test(normalizedValue)) {
+    return {
+      isValid: false,
+      error: `${label} must be a whole number of cents.`,
+      value: null,
+    }
+  }
+
+  const numericValue = Number(normalizedValue)
+
+  if (!Number.isInteger(numericValue)) {
+    return {
+      isValid: false,
+      error: `${label} must be a whole number of cents.`,
+      value: null,
+    }
+  }
+
+  if (numericValue < TRADE_INPUT_LIMITS.priceCents.min) {
+    return {
+      isValid: false,
+      error: `${label} must be at least ${TRADE_INPUT_LIMITS.priceCents.min}¢.`,
+      value: null,
+    }
+  }
+
+  if (numericValue > TRADE_INPUT_LIMITS.priceCents.max) {
+    return {
+      isValid: false,
+      error: `${label} must be ${TRADE_INPUT_LIMITS.priceCents.max}¢ or less.`,
+      value: null,
+    }
+  }
+
+  return {
+    isValid: true,
+    error: "",
+    value: numericValue,
+  }
+}
+
+export function validateTradeForm(form) {
+  const size = validateSize(form?.size)
+  const entry = validatePriceCents(form?.entry, "Entry")
+  const exit = validatePriceCents(form?.exit, "Exit")
+
+  return {
+    isValid: size.isValid && entry.isValid && exit.isValid,
+    fields: {
+      size,
+      entry,
+      exit,
+    },
+    errors: {
+      size: size.error,
+      entry: entry.error,
+      exit: exit.error,
+    },
+  }
+}
+
+export function formatPreviewNumber(value) {
+  if (!Number.isFinite(value)) return "—"
+
+  return Math.abs(value) >= 1000
+    ? COMPACT_NUMBER_FORMATTER.format(value)
+    : STANDARD_NUMBER_FORMATTER.format(value)
+}
+
+export function formatPreviewCurrency(value) {
+  if (!Number.isFinite(value)) return "—"
+
+  return Math.abs(value) >= 1000
+    ? COMPACT_CURRENCY_FORMATTER.format(value)
+    : STANDARD_CURRENCY_FORMATTER.format(value)
+}
 
 export function normalizePrice(value) {
-  const numericValue = Number(value)
+  if (value === "" || value === null || value === undefined) return 0
+
+  const numericValue = Number.parseFloat(value)
 
   if (!Number.isFinite(numericValue)) return null
+  if (numericValue < 0) return null
 
-  const normalizedValue = numericValue > 1 ? numericValue / 100 : numericValue
+  const normalizedValue = numericValue / 100
 
   if (normalizedValue < 0 || normalizedValue > 1) return null
 
@@ -14,13 +193,17 @@ export function normalizePrice(value) {
 }
 
 export function createTrade(form) {
-  const numericSize = Number(form.size)
-  const entry = normalizePrice(form.entry)
-  const exit = normalizePrice(form.exit)
+  const validation = validateTradeForm(form)
 
-  if (!Number.isFinite(numericSize) || numericSize <= 0) return null
+  if (!validation.isValid) return null
+
+  const numericSize = validation.fields.size.value
+  const entry = normalizePrice(validation.fields.entry.value)
+  const exit = normalizePrice(validation.fields.exit.value)
+
   if (entry === null || exit === null) return null
   if (entry <= 0) return null
+  if (!Number.isFinite(exit) || exit < 0) return null
 
   const shares = numericSize / entry
   const totalExitValue = shares * exit
@@ -80,25 +263,100 @@ export function createAdjustment(amount, note = "") {
   }
 }
 
+export function createBalanceEvent(type, amount, note = "") {
+  const numericAmount = Number(amount)
+
+  if (!Number.isFinite(numericAmount) || numericAmount <= 0) return null
+
+  const normalizedType = String(type ?? "").toLowerCase()
+  const absoluteAmount = Math.abs(numericAmount)
+
+  if (normalizedType === BALANCE_EVENT_TYPES.DEPOSIT) {
+    return {
+      id: Date.now(),
+      recordType: BALANCE_EVENT_TYPES.DEPOSIT,
+      transactionType: BALANCE_EVENT_TYPES.DEPOSIT,
+      amount: absoluteAmount,
+      pnl: 0,
+      balanceImpact: absoluteAmount,
+      note,
+      result: BALANCE_EVENT_TYPES.DEPOSIT,
+    }
+  }
+
+  if (normalizedType === BALANCE_EVENT_TYPES.WITHDRAWAL) {
+    return {
+      id: Date.now(),
+      recordType: BALANCE_EVENT_TYPES.WITHDRAWAL,
+      transactionType: BALANCE_EVENT_TYPES.WITHDRAWAL,
+      amount: absoluteAmount,
+      pnl: 0,
+      balanceImpact: -absoluteAmount,
+      note,
+      result: BALANCE_EVENT_TYPES.WITHDRAWAL,
+    }
+  }
+
+  if (normalizedType === BALANCE_EVENT_TYPES.FEES) {
+    return {
+      id: Date.now(),
+      recordType: BALANCE_EVENT_TYPES.FEES,
+      transactionType: BALANCE_EVENT_TYPES.FEES,
+      amount: absoluteAmount,
+      pnl: -absoluteAmount,
+      balanceImpact: -absoluteAmount,
+      note,
+      result: BALANCE_EVENT_TYPES.FEES,
+    }
+  }
+
+  return null
+}
+
 export function getTradePreview(size, entry, exit) {
-  const previewSize = Number(size) || 0
-  const previewEntry = normalizePrice(entry)
-  const previewExit = normalizePrice(exit)
-  const previewShares = previewEntry && previewEntry > 0 ? previewSize / previewEntry : 0
-  const previewTotalExitValue = previewShares * (previewExit ?? 0)
+  const validation = validateTradeForm({ size, entry, exit })
+
+  if (!validation.isValid) {
+    return {
+      isValid: false,
+      previewShares: null,
+      previewTotalExitValue: null,
+      previewPnl: null,
+    }
+  }
+
+  const previewSize = validation.fields.size.value
+  const previewEntry = normalizePrice(validation.fields.entry.value)
+  const previewExit = normalizePrice(validation.fields.exit.value)
+
+  if (!previewEntry || !previewExit) {
+    return {
+      isValid: false,
+      previewShares: null,
+      previewTotalExitValue: null,
+      previewPnl: null,
+    }
+  }
+
+  const previewShares = previewSize / previewEntry
+  const previewTotalExitValue = previewShares * previewExit
   const previewPnl = previewTotalExitValue - previewSize
 
   return {
-    previewShares,
-    previewTotalExitValue,
-    previewPnl,
+    isValid: true,
+    previewShares: Number.isFinite(previewShares) ? previewShares : null,
+    previewTotalExitValue: Number.isFinite(previewTotalExitValue) ? previewTotalExitValue : null,
+    previewPnl: Number.isFinite(previewPnl) ? previewPnl : null,
   }
 }
 
 export function getTradeStats(trades, startBalance) {
   const tradeRecords = trades.filter((trade) => trade.recordType === "trade")
   const pnlRecords = trades.filter(
-    (trade) => trade.recordType === "trade" || trade.recordType === "adjustment"
+    (trade) =>
+      trade.recordType === "trade" ||
+      trade.recordType === BALANCE_EVENT_TYPES.FEES ||
+      trade.recordType === "adjustment"
   )
   const transactionsCount = tradeRecords.length * 2
   const volume = tradeRecords.reduce(
@@ -221,7 +479,8 @@ export function getRsiTone(value) {
 }
 
 export function getTradeRiskState(form, balance) {
-  const numericSize = Number(form.size)
+  const sizeValidation = validateSize(form.size)
+  const numericSize = sizeValidation.isValid ? sizeValidation.value : null
   const quickSizes = getQuickSizes(balance)
   const maxRecommendedSize = Math.max(...quickSizes)
 
@@ -244,24 +503,33 @@ export function getTradeRiskState(form, balance) {
 }
 
 export function buildEquityData(trades, startBalance) {
-  const chronologicalTrades = [...trades].reverse()
+  const chronologicalRecords = [...trades].reverse()
+  const points = [{ name: "Start", balance: Number(startBalance.toFixed(2)) }]
+  let tradeIndex = 0
 
-  return chronologicalTrades.reduce(
-    (points, trade, index) => {
-      const previousBalance = points[points.length - 1].balance
-      const nextBalance = Number(
-        (previousBalance + Number(trade.balanceImpact ?? trade.pnl ?? 0)).toFixed(2)
-      )
+  for (const record of chronologicalRecords) {
+    const previousBalance = points[points.length - 1].balance
+    const nextBalance = Number(
+      (previousBalance + Number(record.balanceImpact ?? record.pnl ?? 0)).toFixed(2)
+    )
 
+    if (record.recordType === "trade") {
+      tradeIndex += 1
       points.push({
-        name: String(index + 1),
+        name: String(tradeIndex),
         balance: nextBalance,
       })
+      continue
+    }
 
-      return points
-    },
-    [{ name: "Start", balance: Number(startBalance.toFixed(2)) }]
-  )
+    const lastPoint = points[points.length - 1]
+    points[points.length - 1] = {
+      ...lastPoint,
+      balance: nextBalance,
+    }
+  }
+
+  return points
 }
 
 export function isTimeValueOk(value) {
@@ -346,7 +614,10 @@ function getDailyTradingMetrics(records, startBalance, dayKey) {
   const dayRecords = chronologicalRecords.filter((record) => getLocalDayKey(record.createdAt) === dayKey)
   const dayTradeRecords = dayRecords.filter((record) => record.recordType === "trade")
   const dayPnlRecords = dayRecords.filter(
-    (record) => record.recordType === "trade" || record.recordType === "adjustment"
+    (record) =>
+      record.recordType === "trade" ||
+      record.recordType === BALANCE_EVENT_TYPES.FEES ||
+      record.recordType === "adjustment"
   )
 
   let lossStreak = 0

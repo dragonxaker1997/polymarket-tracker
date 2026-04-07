@@ -145,11 +145,32 @@ export async function insertAdjustment(userId, accountId, adjustment) {
   return mapTransactionFromRow(data)
 }
 
+export async function insertBalanceEvent(userId, accountId, event) {
+  const client = requireSupabase()
+
+  const { data, error } = await client
+    .from("balance_transactions")
+    .insert({
+      id: event.id,
+      user_id: userId,
+      account_id: accountId,
+      transaction_type: event.transactionType,
+      amount: event.amount,
+      note: event.note || null,
+    })
+    .select(TRANSACTION_COLUMNS)
+    .single()
+
+  if (error) throw error
+
+  return mapTransactionFromRow(data)
+}
+
 export async function removeRecord(userId, accountId, record) {
   const client = requireSupabase()
 
   const { error } =
-    record.recordType === "withdrawal" || record.recordType === "adjustment"
+    isBalanceRecord(record)
       ? await client
           .from("balance_transactions")
           .delete()
@@ -171,7 +192,7 @@ export async function updateRecordNote(userId, accountId, record, note) {
 
   const trimmedNote = note?.trim() || null
   const { error: updateError } =
-    record.recordType === "withdrawal" || record.recordType === "adjustment"
+    isBalanceRecord(record)
       ? await client
           .from("balance_transactions")
           .update({ note: trimmedNote })
@@ -188,7 +209,7 @@ export async function updateRecordNote(userId, accountId, record, note) {
   if (updateError) throw updateError
 
   const { data, error } =
-    record.recordType === "withdrawal" || record.recordType === "adjustment"
+    isBalanceRecord(record)
       ? await client
           .from("balance_transactions")
           .select(TRANSACTION_COLUMNS)
@@ -221,20 +242,23 @@ export async function resetDashboard(userId, accountId) {
   if (transactionsError) throw transactionsError
 }
 
-export async function loadWorkerSummaries() {
+export async function loadWorkerSummaries(workspaceId = null) {
   const client = requireSupabase()
 
-  const { data, error } = await client.rpc("get_account_summaries")
+  const args = workspaceId ? { target_workspace_id: workspaceId } : {}
+  const { data, error } = await client.rpc("get_account_summaries", args)
 
   if (error) throw error
 
   return (data ?? []).map((row) => ({
+    workspace_id: row.workspace_id ?? "",
     user_id: row.user_id,
     account_id: row.account_id,
     account_name: row.account_name ?? "",
     account_type: row.account_type ?? "",
     display_name: row.display_name ?? "",
     email: row.email,
+    role: row.role ?? "member",
     start_balance: Number(row.start_balance ?? 0),
     total_pnl: Number(row.total_pnl ?? 0),
     streak_count: Number(row.streak_count ?? 0),
@@ -244,10 +268,11 @@ export async function loadWorkerSummaries() {
   }))
 }
 
-export async function loadTeamDailyPnl(dateFrom, dateTo) {
+export async function loadTeamDailyPnl(dateFrom, dateTo, workspaceId = null) {
   const client = requireSupabase()
 
   const { data, error } = await client.rpc("get_team_daily_pnl", {
+    target_workspace_id: workspaceId,
     date_from: dateFrom,
     date_to: dateTo,
   })
@@ -255,6 +280,7 @@ export async function loadTeamDailyPnl(dateFrom, dateTo) {
   if (error) throw error
 
   return (data ?? []).map((row) => ({
+    workspace_id: row.workspace_id ?? "",
     trade_date: row.trade_date,
     user_id: row.user_id,
     account_id: row.account_id,
@@ -262,6 +288,7 @@ export async function loadTeamDailyPnl(dateFrom, dateTo) {
     account_type: row.account_type ?? "",
     display_name: row.display_name ?? "",
     email: row.email,
+    role: row.role ?? "member",
     daily_pnl: Number(row.daily_pnl ?? 0),
   }))
 }
@@ -315,7 +342,35 @@ function mapTradeFromRow(row) {
 
 function mapTransactionFromRow(row) {
   const transactionType = row.transaction_type ?? "withdrawal"
-  const amount = Number(row.amount)
+  const amount = Math.abs(Number(row.amount))
+
+  if (transactionType === "deposit") {
+    return {
+      id: row.id,
+      recordType: "deposit",
+      accountId: row.account_id,
+      amount,
+      pnl: 0,
+      balanceImpact: amount,
+      note: row.note ?? "",
+      result: "deposit",
+      createdAt: row.created_at,
+    }
+  }
+
+  if (transactionType === "fees") {
+    return {
+      id: row.id,
+      recordType: "fees",
+      accountId: row.account_id,
+      amount,
+      pnl: -amount,
+      balanceImpact: -amount,
+      note: row.note ?? "",
+      result: "fees",
+      createdAt: row.created_at,
+    }
+  }
 
   if (transactionType === "adjustment") {
     return {
@@ -342,4 +397,13 @@ function mapTransactionFromRow(row) {
     result: "withdrawal",
     createdAt: row.created_at,
   }
+}
+
+function isBalanceRecord(record) {
+  return (
+    record.recordType === "withdrawal" ||
+    record.recordType === "adjustment" ||
+    record.recordType === "deposit" ||
+    record.recordType === "fees"
+  )
 }

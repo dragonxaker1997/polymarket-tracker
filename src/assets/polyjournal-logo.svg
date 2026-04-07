@@ -1,0 +1,16 @@
+<svg width="96" height="96" viewBox="0 0 96 96" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="polyjournalGradient" x1="10" y1="8" x2="86" y2="88" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#3D66F5"/>
+      <stop offset="1" stop-color="#3861EB"/>
+    </linearGradient>
+  </defs>
+  <path d="M16 18C16 15.7909 17.7909 14 20 14H47C47.6875 14 48.3125 14.175 48.875 14.525L50 15.225L51.125 14.525C51.6875 14.175 52.3125 14 53 14H80C82.2091 14 84 15.7909 84 18V70C84 72.2091 82.2091 74 80 74H53C52.3125 74 51.6875 74.175 51.125 74.525L50 75.225L48.875 74.525C48.3125 74.175 47.6875 74 47 74H20C17.7909 74 16 72.2091 16 70V18Z" fill="url(#polyjournalGradient)"/>
+  <path d="M50 22V74" stroke="white" stroke-width="4" stroke-linecap="round"/>
+  <path d="M58 34L74 30" stroke="white" stroke-width="4" stroke-linecap="round"/>
+  <path d="M58 42L74 38" stroke="white" stroke-width="4" stroke-linecap="round"/>
+  <path d="M58 50L74 46" stroke="white" stroke-width="4" stroke-linecap="round"/>
+  <path d="M27 35L43 31V43L27 39L43 47V59L27 55" stroke="white" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M50 76L76 70V76L50 84V76Z" fill="url(#polyjournalGradient)"/>
+  <path d="M67 76L76 74V85L72.5 83L67 87V76Z" fill="url(#polyjournalGradient)"/>
+</svg>

@@ -3,32 +3,21 @@ import { useEffect, useMemo, useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
 import {
   formatDateKey,
   getAtrTone,
   getEntryTone,
   getRsiTone,
   getTimeTone,
-  isSameDay,
-  isWithinDateRange,
 } from "@/lib/trade-utils"
 
 export function TradeHistory({ trades, onDelete, onUpdateNote }) {
-  const [selectedDate, setSelectedDate] = useState("")
-  const [exportFrom, setExportFrom] = useState("")
-  const [exportTo, setExportTo] = useState("")
   const [expandedTradeId, setExpandedTradeId] = useState(null)
   const [noteDrafts, setNoteDrafts] = useState({})
   const [isSavingNote, setIsSavingNote] = useState(false)
   const [page, setPage] = useState(1)
 
-  const filteredTrades = useMemo(() => {
-    if (!selectedDate) return trades
-
-    return trades.filter((trade) => isSameDay(trade.createdAt, selectedDate))
-  }, [selectedDate, trades])
-  const paginatedTrades = useMemo(() => filteredTrades.slice(0, 50), [filteredTrades])
+  const paginatedTrades = useMemo(() => trades.slice(0, 50), [trades])
   const totalPages = Math.max(1, Math.ceil(paginatedTrades.length / 5))
   const currentPage = Math.min(page, totalPages)
   const visibleTrades = useMemo(() => {
@@ -66,142 +55,59 @@ export function TradeHistory({ trades, onDelete, onUpdateNote }) {
     }
   }
 
-  function handleExportCsv() {
-    const exportTrades = trades.filter((trade) => isWithinDateRange(trade.createdAt, exportFrom, exportTo))
-
-    const rows = [
-      [
-        "created_at",
-        "size",
-        "entry_cents",
-        "exit_cents",
-        "pnl",
-        "time",
-        "atr",
-        "rsi",
-        "macd",
-        "result",
-        "note",
-      ],
-      ...exportTrades.map((trade) => [
-        trade.createdAt ?? "",
-        trade.recordType === "trade" ? trade.size : trade.amount,
-        trade.recordType === "trade" ? (Number(trade.entry) * 100).toFixed(0) : "",
-        trade.recordType === "trade" ? (Number(trade.exit) * 100).toFixed(0) : "",
-        Number(trade.pnl).toFixed(2),
-        trade.time ?? "",
-        trade.atr ?? "",
-        trade.rsi ?? "",
-        trade.macd ?? "",
-        trade.recordType,
-        trade.note ?? "",
-      ]),
-    ]
-
-    const csv = rows
-      .map((row) =>
-        row
-          .map((value) => `"${String(value).replaceAll('"', '""')}"`)
-          .join(",")
-      )
-      .join("\n")
-
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement("a")
-    link.href = url
-    link.download = `trades-${exportFrom || "all"}-${exportTo || "all"}.csv`
-    link.click()
-    URL.revokeObjectURL(url)
-  }
-
   return (
     <Card className="border-slate-800 bg-[#0f172a] py-0 text-white ring-0 xl:col-span-2">
       <CardHeader className="px-5 pt-5 pb-0 md:px-6 md:pt-6">
         <CardTitle className="text-xl font-semibold">Trade History</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4 px-5 pt-4 pb-5 md:px-6 md:pb-6">
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-          <div className="rounded-xl border border-slate-800 bg-[#020617] p-4">
-            <div className="mb-3 text-sm text-slate-400">Filter by date</div>
-            <div className="flex flex-col gap-3 sm:flex-row">
-              <Input
-                type="date"
-                value={selectedDate}
-                onChange={(event) => {
-                  setSelectedDate(event.target.value)
-                  setPage(1)
-                }}
-                className="h-10 rounded-xl border-slate-800 bg-slate-950 text-white"
-              />
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setSelectedDate("")
-                  setPage(1)
-                }}
-                className="rounded-xl border-slate-700 bg-slate-900 text-white hover:bg-slate-800"
-              >
-                Clear
-              </Button>
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-slate-800 bg-[#020617] p-4">
-            <div className="mb-3 text-sm text-slate-400">Export CSV by period</div>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <Input
-                type="date"
-                value={exportFrom}
-                onChange={(event) => setExportFrom(event.target.value)}
-                className="h-10 rounded-xl border-slate-800 bg-slate-950 text-white"
-              />
-              <Input
-                type="date"
-                value={exportTo}
-                onChange={(event) => setExportTo(event.target.value)}
-                className="h-10 rounded-xl border-slate-800 bg-slate-950 text-white"
-              />
-              <Button
-                onClick={handleExportCsv}
-                className="rounded-xl bg-slate-100 text-slate-950 hover:bg-white"
-              >
-                Export CSV
-              </Button>
-            </div>
-          </div>
-        </div>
-
         <div className="space-y-3">
-          {filteredTrades.length === 0 ? (
+          {trades.length === 0 ? (
             <div className="rounded-xl border border-dashed border-slate-700 p-6 text-center text-slate-400">
-              No trades for the selected period
+              No trade history yet
             </div>
           ) : (
             visibleTrades.map((trade) => {
               const tradeDate = trade.createdAt ? formatDateKey(new Date(trade.createdAt)) : ""
               const visibleNote = noteDrafts[trade.id] ?? trade.note ?? ""
+              const isTradeRecord = trade.recordType === "trade"
+              const isWithdrawal = trade.recordType === "withdrawal"
+              const isAdjustment = trade.recordType === "adjustment"
+              const isDeposit = trade.recordType === "deposit"
+              const isFees = trade.recordType === "fees"
+              const title = isWithdrawal
+                ? "WITHDRAWAL"
+                : isAdjustment
+                  ? "ADJUSTMENT"
+                  : isDeposit
+                    ? "DEPOSIT"
+                    : isFees
+                      ? "FEES"
+                      : trade.result === "win"
+                        ? "WIN"
+                        : "LOSS"
+              const amountText = isTradeRecord
+                ? `size $${Number(trade.size).toFixed(2)}`
+                : `amount $${Number(trade.amount || 0).toFixed(2)}`
+              const impactValue = isTradeRecord
+                ? Number(trade.pnl)
+                : isDeposit
+                  ? Number(trade.amount || 0)
+                  : isWithdrawal || isFees
+                    ? -Math.abs(Number(trade.amount || 0))
+                    : Number(trade.balanceImpact ?? trade.pnl ?? 0)
+              const impactLabel = `${impactValue >= 0 ? "+" : "-"}$${Math.abs(impactValue).toFixed(2)}`
 
               return (
                 <article key={trade.id} className="rounded-xl border border-slate-800 bg-[#020617] p-4">
                   <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                     <div className="space-y-2">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-lg font-semibold">
-                          {trade.recordType === "withdrawal"
-                            ? "WITHDRAWAL"
-                            : trade.recordType === "adjustment"
-                              ? "ADJUSTMENT"
-                            : trade.result === "win"
-                              ? "WIN"
-                              : "LOSS"}
-                        </span>
+                        <span className="text-lg font-semibold">{title}</span>
                         <span className="text-sm text-slate-400">
-                          {trade.recordType === "withdrawal" || trade.recordType === "adjustment"
-                            ? `amount $${Number(trade.amount || 0).toFixed(2)}`
-                            : `size $${Number(trade.size).toFixed(2)}`}
+                          {amountText}
                         </span>
-                        {trade.recordType === "trade" ? (
+                        {isTradeRecord ? (
                           <span className="text-sm text-slate-400">
                             shares {Number(trade.shares || 0).toFixed(2)}
                           </span>
@@ -209,13 +115,21 @@ export function TradeHistory({ trades, onDelete, onUpdateNote }) {
                         {tradeDate ? <PlainBadge label={tradeDate} /> : null}
                       </div>
 
-                      {trade.recordType === "withdrawal" ? (
+                      {isWithdrawal ? (
                         <div className="text-sm text-slate-300 md:text-base">
                           Withdrawal from balance history
                         </div>
-                      ) : trade.recordType === "adjustment" ? (
+                      ) : isAdjustment ? (
                         <div className="text-sm text-slate-300 md:text-base">
                           Manual balance adjustment
+                        </div>
+                      ) : isDeposit ? (
+                        <div className="text-sm text-slate-300 md:text-base">
+                          Deposit added to balance history
+                        </div>
+                      ) : isFees ? (
+                        <div className="text-sm text-slate-300 md:text-base">
+                          Fee expense recorded as PnL impact
                         </div>
                       ) : (
                         <>
@@ -294,18 +208,16 @@ export function TradeHistory({ trades, onDelete, onUpdateNote }) {
                       <div className="text-right">
                         <div
                           className={`text-xl font-bold ${
-                            trade.recordType === "withdrawal"
+                            isWithdrawal || isFees
                               ? "text-red-400"
-                              : trade.pnl >= 0
+                              : impactValue >= 0
                                 ? "text-green-400"
                                 : "text-red-400"
                           }`}
                         >
-                          {trade.recordType === "withdrawal"
-                            ? `-$${Number(trade.amount || 0).toFixed(2)}`
-                            : `${trade.pnl >= 0 ? "+" : ""}$${Number(trade.pnl).toFixed(2)}`}
+                          {impactLabel}
                         </div>
-                        {trade.recordType === "trade" ? (
+                        {isTradeRecord ? (
                           <div className="mt-1 text-xs text-slate-400">
                             total ${Number(trade.totalExitValue || 0).toFixed(2)}
                           </div>
@@ -327,11 +239,11 @@ export function TradeHistory({ trades, onDelete, onUpdateNote }) {
           )}
         </div>
 
-        {filteredTrades.length > 0 ? (
+        {trades.length > 0 ? (
           <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
             <div className="text-xs text-slate-500">
               Page {currentPage} of {totalPages}
-              {filteredTrades.length > 50 ? " · showing first 50 trades only" : ""}
+              {trades.length > 50 ? " · showing first 50 trades only" : ""}
             </div>
             <div className="flex gap-2">
               <Button

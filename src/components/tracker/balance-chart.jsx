@@ -10,14 +10,14 @@ import {
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 
-export function BalanceChart({ data }) {
+export function BalanceChart({ data, chartHeightClass = "h-72" }) {
   return (
     <Card className="border-slate-800 bg-[#0f172a] py-0 text-white ring-0">
       <CardHeader className="px-5 pt-5 pb-0 md:px-6 md:pt-6">
         <CardTitle className="text-xl font-semibold">Balance Growth</CardTitle>
       </CardHeader>
       <CardContent className="px-5 pt-4 pb-5 md:px-6 md:pb-6">
-        <div className="h-72 w-full">
+        <div className={`${chartHeightClass} w-full`}>
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={data}>
               <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />

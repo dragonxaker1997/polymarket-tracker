@@ -34,15 +34,26 @@ export function AuthProvider({ children }) {
   async function signIn(email, password) {
     if (!supabase) throw new Error("Supabase is not configured.")
 
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) throw error
+
+    return {
+      session: data.session ?? null,
+      user: data.user ?? null,
+    }
   }
 
   async function signUp(email, password) {
     if (!supabase) throw new Error("Supabase is not configured.")
 
-    const { error } = await supabase.auth.signUp({ email, password })
+    const { data, error } = await supabase.auth.signUp({ email, password })
     if (error) throw error
+
+    return {
+      session: data.session ?? null,
+      user: data.user ?? null,
+      needsEmailConfirmation: !data.session,
+    }
   }
 
   async function signOut() {
