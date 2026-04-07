@@ -1,4 +1,5 @@
 export const DEFAULT_START_BALANCE = 47
+export const TRADE_COOLDOWN_MS = 60 * 60 * 1000
 
 export function normalizePrice(value) {
   const numericValue = Number(value)
@@ -148,6 +149,38 @@ export function getTradeStats(trades, startBalance) {
   }
 }
 
+export function getCooldownTrigger(records, startBalance, dayKey = getLocalDayKey(new Date())) {
+  const metrics = getDailyTradingMetrics(records, startBalance, dayKey)
+
+  if (!metrics) return null
+
+  if (metrics.startBalanceOfDay > 0 && metrics.dailyPnL >= metrics.startBalanceOfDay * 0.13) {
+    return {
+      code: "daily_profit",
+      label: "Достигнут дневной профит",
+      metrics,
+    }
+  }
+
+  if (metrics.lossStreak >= 3) {
+    return {
+      code: "loss_streak",
+      label: "3 убыточные сделки подряд",
+      metrics,
+    }
+  }
+
+  if (metrics.startBalanceOfDay > 0 && metrics.dailyPnL <= metrics.startBalanceOfDay * -0.2) {
+    return {
+      code: "daily_loss",
+      label: "Достигнут лимит убытка",
+      metrics,
+    }
+  }
+
+  return null
+}
+
 export function getQuickSizes(balance) {
   return [0.12, 0.15, 0.2].map((ratio) => balance * ratio)
 }
@@ -272,6 +305,64 @@ export function formatDateKey(date) {
   return `${year}-${month}-${day}`
 }
 
+export function getLocalDayKey(dateLike) {
+  const date = dateLike instanceof Date ? dateLike : new Date(dateLike)
+
+  if (Number.isNaN(date.getTime())) {
+    return formatDateKey(new Date())
+  }
+
+  return formatDateKey(date)
+}
+
+export function formatCountdown(remainingMs) {
+  const totalSeconds = Math.max(0, Math.ceil(remainingMs / 1000))
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`
+}
+
+function getDailyTradingMetrics(records, startBalance, dayKey) {
+  const chronologicalRecords = [...records]
+    .filter((record) => record.createdAt)
+    .sort((left, right) => new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime())
+
+  const firstTradeIndex = chronologicalRecords.findIndex(
+    (record) => record.recordType === "trade" && getLocalDayKey(record.createdAt) === dayKey
+  )
+
+  if (firstTradeIndex === -1) {
+    return null
+  }
+
+  const startBalanceOfDay = chronologicalRecords
+    .slice(0, firstTradeIndex)
+    .reduce(
+      (sum, record) => sum + Number(record.balanceImpact ?? record.pnl ?? 0),
+      Number(startBalance)
+    )
+
+  const dayRecords = chronologicalRecords.filter((record) => getLocalDayKey(record.createdAt) === dayKey)
+  const dayTradeRecords = dayRecords.filter((record) => record.recordType === "trade")
+  const dayPnlRecords = dayRecords.filter(
+    (record) => record.recordType === "trade" || record.recordType === "adjustment"
+  )
+
+  let lossStreak = 0
+
+  for (let index = dayTradeRecords.length - 1; index >= 0; index -= 1) {
+    if (dayTradeRecords[index].result !== "loss") break
+    lossStreak += 1
+  }
+
+  return {
+    startBalanceOfDay,
+    dailyPnL: dayPnlRecords.reduce((sum, record) => sum + Number(record.pnl ?? 0), 0),
+    lossStreak,
+  }
+}
+
 function isTradeFromToday(createdAt) {
   if (!createdAt) return false
 
@@ -279,5 +370,5 @@ function isTradeFromToday(createdAt) {
 
   if (Number.isNaN(tradeDate.getTime())) return false
 
-  return formatDateKey(tradeDate) === formatDateKey(new Date())
+  return getLocalDayKey(tradeDate) === getLocalDayKey(new Date())
 }

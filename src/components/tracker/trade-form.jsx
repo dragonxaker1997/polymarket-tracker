@@ -37,6 +37,7 @@ export function TradeForm({
   onAddWithdrawal,
   onAddAdjustment,
   currentBalance,
+  cooldown,
   requireDangerConfirm,
 }) {
   const [form, setForm] = useState(EMPTY_FORM)
@@ -62,6 +63,8 @@ export function TradeForm({
   }
 
   async function handleSubmit() {
+    if (cooldown?.isActive) return
+
     if (requireDangerConfirm) {
       const confirmed = window.confirm(
         "Loss streak is already 5 or more. Confirm this risky trade before continuing."
@@ -78,6 +81,8 @@ export function TradeForm({
   }
 
   async function handleAddWithdrawal() {
+    if (cooldown?.isActive) return
+
     const created = await onAddWithdrawal(withdrawalAmount, withdrawalNote)
 
     if (created) {
@@ -87,6 +92,8 @@ export function TradeForm({
   }
 
   async function handleAddAdjustment() {
+    if (cooldown?.isActive) return
+
     const created = await onAddAdjustment(adjustmentAmount, adjustmentNote)
 
     if (created) {
@@ -96,7 +103,7 @@ export function TradeForm({
   }
 
   return (
-    <Card className="border-slate-800 bg-[#0f172a] py-0 text-white ring-0 xl:col-span-1">
+    <Card className="relative overflow-hidden border-slate-800 bg-[#0f172a] py-0 text-white ring-0 xl:col-span-1">
       <CardHeader className="px-5 pt-5 pb-0 md:px-6 md:pt-6">
         <CardTitle className="text-xl font-semibold">Add Trade</CardTitle>
       </CardHeader>
@@ -220,6 +227,23 @@ export function TradeForm({
           </div>
         </div>
       </CardContent>
+
+      {cooldown?.isActive ? (
+        <div className="absolute inset-0 z-20 flex items-center justify-center bg-[#020617]/88 px-6 text-center backdrop-blur-[2px]">
+          <div className="max-w-sm rounded-2xl border border-slate-700 bg-slate-950/95 p-6 shadow-2xl">
+            <div className="text-xl font-semibold text-white">
+              Нужно зачильться на этом кошельке и отдохнуть
+            </div>
+            <div className="mt-3 text-sm text-amber-300">{cooldown.reasonLabel}</div>
+            <div className="mt-4 text-4xl font-bold tracking-[0.08em] text-white">
+              {cooldown.remainingLabel}
+            </div>
+            <div className="mt-2 text-xs uppercase tracking-[0.2em] text-slate-500">
+              Cooldown
+            </div>
+          </div>
+        </div>
+      ) : null}
     </Card>
   )
 }

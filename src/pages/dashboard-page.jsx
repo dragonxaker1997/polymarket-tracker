@@ -10,10 +10,14 @@ import { Card, CardContent } from "@/components/ui/card"
 import { isAdminUser } from "@/lib/admin"
 import {
   DEFAULT_START_BALANCE,
+  TRADE_COOLDOWN_MS,
   buildEquityData,
   createAdjustment,
   createTrade,
   createWithdrawal,
+  formatCountdown,
+  getCooldownTrigger,
+  getLocalDayKey,
   getTradeStats,
 } from "@/lib/trade-utils"
 import {
@@ -35,6 +39,47 @@ const BalanceChart = lazy(() =>
   }))
 )
 
+function getCooldownStorageKey(userId, accountId) {
+  return `trade-cooldown:${userId}:${accountId}`
+}
+
+function getStoredCooldown(userId, accountId) {
+  if (typeof window === "undefined" || !userId || !accountId) return null
+
+  try {
+    const raw = window.localStorage.getItem(getCooldownStorageKey(userId, accountId))
+    if (!raw) return null
+
+    const parsed = JSON.parse(raw)
+
+    if (!parsed?.expiresAt || !parsed?.dayKey || !parsed?.reasonLabel) {
+      return null
+    }
+
+    return parsed
+  } catch {
+    return null
+  }
+}
+
+function clearStoredCooldown(userId, accountId) {
+  if (typeof window === "undefined" || !userId || !accountId) return
+
+  window.localStorage.removeItem(getCooldownStorageKey(userId, accountId))
+}
+
+function setStoredCooldown(userId, accountId, cooldown) {
+  if (typeof window === "undefined" || !userId || !accountId) return
+
+  window.localStorage.setItem(getCooldownStorageKey(userId, accountId), JSON.stringify(cooldown))
+}
+
+function isCooldownExpired(cooldown, nowTimestamp) {
+  if (!cooldown) return true
+
+  return cooldown.dayKey !== getLocalDayKey(new Date(nowTimestamp)) || cooldown.expiresAt <= nowTimestamp
+}
+
 export function DashboardPage() {
   const { signOut, user } = useAuth()
   const {
@@ -52,6 +97,8 @@ export function DashboardPage() {
   const [isBootstrapping, setIsBootstrapping] = useState(true)
   const [isSavingProfile, setIsSavingProfile] = useState(false)
   const [isSavingAccountName, setIsSavingAccountName] = useState(false)
+  const [cooldown, setCooldown] = useState(null)
+  const [nowTimestamp, setNowTimestamp] = useState(Date.now())
   const [error, setError] = useState("")
 
   useEffect(() => {
@@ -61,6 +108,44 @@ export function DashboardPage() {
   useEffect(() => {
     setAccountNameDraft(activeAccount?.name ?? "")
   }, [activeAccount])
+
+  useEffect(() => {
+    if (!user?.id || !activeAccountId) {
+      setCooldown(null)
+      return
+    }
+
+    const storedCooldown = getStoredCooldown(user.id, activeAccountId)
+
+    if (!storedCooldown || isCooldownExpired(storedCooldown, Date.now())) {
+      clearStoredCooldown(user.id, activeAccountId)
+      setCooldown(null)
+      return
+    }
+
+    setCooldown(storedCooldown)
+  }, [activeAccountId, user?.id])
+
+  useEffect(() => {
+    if (!cooldown) return undefined
+
+    const intervalId = window.setInterval(() => {
+      setNowTimestamp(Date.now())
+    }, 1000)
+
+    return () => {
+      window.clearInterval(intervalId)
+    }
+  }, [cooldown])
+
+  useEffect(() => {
+    if (!cooldown || !user?.id || !activeAccountId) return
+
+    if (isCooldownExpired(cooldown, nowTimestamp)) {
+      clearStoredCooldown(user.id, activeAccountId)
+      setCooldown(null)
+    }
+  }, [activeAccountId, cooldown, nowTimestamp, user?.id])
 
   useEffect(() => {
     if (!activeAccountId) {
@@ -121,15 +206,49 @@ export function DashboardPage() {
     [records, startBalance]
   )
   const equityData = useMemo(() => buildEquityData(records, startBalance), [records, startBalance])
+  const activeCooldown = useMemo(() => {
+    if (!cooldown) return null
+
+    const remainingMs = Math.max(0, cooldown.expiresAt - nowTimestamp)
+
+    return {
+      ...cooldown,
+      isActive: remainingMs > 0 && cooldown.dayKey === getLocalDayKey(new Date(nowTimestamp)),
+      remainingMs,
+      remainingLabel: formatCountdown(remainingMs),
+    }
+  }, [cooldown, nowTimestamp])
 
   async function handleAddTrade(form) {
+    if (activeCooldown?.isActive) {
+      setError("Cooldown is active for this wallet.")
+      return false
+    }
+
     const trade = createTrade(form)
     if (!trade) return false
 
     try {
       setError("")
       const savedTrade = await insertTrade(user.id, activeAccountId, trade)
-      setRecords((current) => [savedTrade, ...current])
+      const nextRecords = [savedTrade, ...records]
+      const trigger = getCooldownTrigger(nextRecords, startBalance, getLocalDayKey(savedTrade.createdAt))
+      setRecords(nextRecords)
+
+      if (trigger) {
+        const triggerTime = new Date(savedTrade.createdAt || Date.now()).getTime()
+        const nextCooldown = {
+          reasonCode: trigger.code,
+          reasonLabel: trigger.label,
+          startedAt: triggerTime,
+          expiresAt: triggerTime + TRADE_COOLDOWN_MS,
+          dayKey: getLocalDayKey(savedTrade.createdAt || Date.now()),
+        }
+
+        setCooldown(nextCooldown)
+        setStoredCooldown(user.id, activeAccountId, nextCooldown)
+      }
+
       return true
     } catch (nextError) {
       setError(nextError.message ?? "Failed to save trade.")
@@ -502,6 +621,7 @@ export function DashboardPage() {
             onAddWithdrawal={handleAddWithdrawal}
             onAddAdjustment={handleAddAdjustment}
             currentBalance={balance}
+            cooldown={activeCooldown}
             requireDangerConfirm={showBreakWarning}
           />
           <TradeHistory
