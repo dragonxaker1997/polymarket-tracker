@@ -100,20 +100,20 @@ function validatePriceCents(value, label, minCents = TRADE_INPUT_LIMITS.priceCen
     }
   }
 
-  if (!/^\d+$/.test(normalizedValue)) {
+  if (!/^\d+(\.\d{1,2})?$/.test(normalizedValue)) {
     return {
       isValid: false,
-      error: `${label} must be a whole number of cents.`,
+      error: `${label} must be a positive cents value with up to 2 decimals.`,
       value: null,
     }
   }
 
   const numericValue = Number(normalizedValue)
 
-  if (!Number.isInteger(numericValue)) {
+  if (!Number.isFinite(numericValue)) {
     return {
       isValid: false,
-      error: `${label} must be a whole number of cents.`,
+      error: `${label} must be a valid cents value.`,
       value: null,
     }
   }
