@@ -89,7 +89,7 @@ function validateSize(value) {
   }
 }
 
-function validatePriceCents(value, label) {
+function validatePriceCents(value, label, minCents = TRADE_INPUT_LIMITS.priceCents.min) {
   const normalizedValue = getTrimmedValue(value)
 
   if (!normalizedValue) {
@@ -118,10 +118,10 @@ function validatePriceCents(value, label) {
     }
   }
 
-  if (numericValue < TRADE_INPUT_LIMITS.priceCents.min) {
+  if (numericValue < minCents) {
     return {
       isValid: false,
-      error: `${label} must be at least ${TRADE_INPUT_LIMITS.priceCents.min}¢.`,
+      error: `${label} must be at least ${minCents}¢.`,
       value: null,
     }
   }
@@ -143,8 +143,8 @@ function validatePriceCents(value, label) {
 
 export function validateTradeForm(form) {
   const size = validateSize(form?.size)
-  const entry = validatePriceCents(form?.entry, "Entry")
-  const exit = validatePriceCents(form?.exit, "Exit")
+  const entry = validatePriceCents(form?.entry, "Entry", 1)
+  const exit = validatePriceCents(form?.exit, "Exit", 0)
 
   return {
     isValid: size.isValid && entry.isValid && exit.isValid,
